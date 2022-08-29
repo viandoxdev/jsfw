@@ -1,28 +1,23 @@
-// vi: set shiftwidth=4 : set softtabstop=4
-#include <stdio.h>
-#include <sys/ioctl.h>
-#include <linux/joystick.h>
-#include <stdint.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <unistd.h>
+#include<stdio.h>
+#include<sys/ioctl.h>
+#include<linux/joystick.h>
+#include<stdint.h>
+#include<fcntl.h>
+#include<stdlib.h>
+#include<string.h>
+#include<stdarg.h>
+#include<unistd.h>
+#include<pthread.h>
 
 #include "main.h"
 #include "hid.h"
+#include "server.h"
 
 const char* USAGE[] = {
-        "jsfw client [input] [address] [port]\n",
+        "jsfw client [address] [port]\n",
         "jsfw server [port]\n",
 };
 const size_t EVENT_SIZE = sizeof(struct js_event);
-
-void joystick_debug(Joystick * js) {
-    printf("Joystick");
-    if(js->name) printf(" (%s)", js->name);
-    printf(": %u buttons, %u axes\n", js->button_count, js->axis_count);
-}
 
 void panicf(const char *fmt, ...) {
     va_list args;
@@ -34,49 +29,22 @@ void panicf(const char *fmt, ...) {
 
 uint16_t parse_port(const char * str) {
     long long n = atoll(str);
-    if(n < 0 || n > UINT16_MAX)
-        panicf("Invalid port: Expected a number in the range 0..%d, got %lld\n", UINT16_MAX, n);
+    if(n <= 0 || n > UINT16_MAX)
+        panicf("Invalid port: Expected a number in the range 1..%d, got '%s'\n", UINT16_MAX, str);
     return n;
 }
 
 void server(uint16_t port) {
     printf("Server (port: %u).\n", port);
-    panicf("Uninplemented\n");
+
+    pthread_t _;
+    pthread_create(&_, NULL, hid_thread, NULL);
+
+    server_run(port);
 }
 
-void client(char * input, char * address, uint16_t port) {
-    hid_main();
-    printf("JSFW Client (%s -> %s:%d)\n", input, address, port);
-    int fd = open(input, O_RDONLY);
-    if(fd < 0) panicf("Couldn't open %s", input);
-
-    Joystick js = {};
-
-    char name[256];
-    int name_len = ioctl(fd, JSIOCGNAME(256), name);
-    if(name_len >= 0) {
-        js.name = malloc(name_len);
-        if(js.name) strncpy(js.name, name, name_len);
-    }
-
-    ioctl(fd, JSIOCGBUTTONS, &js.button_count);
-    ioctl(fd, JSIOCGAXES, &js.axis_count);
-
-    joystick_debug(&js);
-    
-    struct js_event events[128];
-    while(1) {
-        int bytes = read(fd, events, EVENT_SIZE);
-        if(bytes < EVENT_SIZE) {
-            printf("Got %d bytes, expected at least %lu", bytes, EVENT_SIZE);
-            continue;
-        }
-        int count = bytes / EVENT_SIZE;
-        for(int i = 0; i < count; i++) {
-            struct js_event event = events[i];
-            printf("EV | type(%d) number(%d) value(%d) ts(%d)\n", event.type, event.number, event.value, event.time);
-        }
-    }
+void client(char * address, uint16_t port) {
+    printf("JSFW Client (%s:%d)\n", address, port);
 }
 
 int main(int argc, char* argv[]) {
@@ -98,13 +66,12 @@ int main(int argc, char* argv[]) {
 
     } else if(strcmp(mode, "client") == 0) {
 
-        if(argc < 5)
+        if(argc < 4)
             panicf("Usage: %s", USAGE[0]);
 
-        char * input = argv[2];
-        char * address = argv[3];
-        uint16_t port = parse_port(argv[4]);
-        client(input, address, port);
+        char * address = argv[2];
+        uint16_t port = parse_port(argv[3]);
+        client(address, port);
 
     } else {
         printf("Unknown mode: '%s'\n", mode);

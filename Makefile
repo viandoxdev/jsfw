@@ -1,13 +1,13 @@
 Q=@
 CC=gcc
-CFLAGS=-g -Wall
+CFLAGS=-g -Wall -Wno-format-truncation
 LDFLAGS=
-BUILD_DIR=./build
+BUILD_DIR=./objects
 BIN=jsfw
 
-RUNARGS=client /dev/input/js0 localhost 7776
+RUNARGS=client localhost 7776
 
-SOURCES=main.c hid.c
+SOURCES=$(wildcard *.c)
 
 OBJECTS:=$(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
