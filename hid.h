@@ -1,3 +1,4 @@
+// vi: set ft=c
 #ifndef HID_H
 #define HID_H
 #include<stdint.h>
@@ -10,6 +11,7 @@ typedef struct {
     int event;
     int hidraw;
     uniq_t uniq;
+    char * name;
 } PhysicalDevice;
 
 void * hid_thread();

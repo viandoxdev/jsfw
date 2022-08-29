@@ -1,2 +1,6 @@
 BasedOnStyle: LLVM
 IndentWidth: 4
+AlignConsecutiveDeclarations: true
+AlignConsecutiveAssignments: true
+PointerAlignment: Right
+ColumnLimit: 110

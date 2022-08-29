@@ -28,6 +28,8 @@ static pthread_cond_t devices_queue_cond = PTHREAD_COND_INITIALIZER;
 // Mutex for devices
 static pthread_mutex_t devices_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static char * DEFAULT_NAME = "Unnamed Device";
+
 // uniqs are just hexadecimal numbers with colons in between each byte
 uniq_t parse_uniq(char uniq[17]) {
     uniq_t res = 0;
@@ -58,6 +60,8 @@ bool filter_event(int fd, char * event) {
             break;
         }
     }
+
+    closedir(device_dir);
 
     if(!found) {
         return false;
@@ -97,6 +101,12 @@ PhysicalDevice get_device() {
 }
 
 void return_device(PhysicalDevice * dev) {
+    if(dev->name != NULL && dev->name != DEFAULT_NAME) {
+        printf("HID: Returning device '%s' (%012lx)\n", dev->name, dev->uniq);
+        free(dev->name);
+    } else {
+        printf("HID: Returning device %012lx\n", dev->uniq);
+    }
     close(dev->event);
     close(dev->hidraw);
     pthread_mutex_lock(&devices_mutex);
@@ -132,8 +142,12 @@ void poll_devices() {
             continue;
         }
 
-        char name[256] = {};
-        ioctl(dev.event, EVIOCGNAME(256), name);
+        char name_buf[256] = {};
+        char * name;
+        if(ioctl(dev.event, EVIOCGNAME(256), name_buf) >= 0)
+            name = name_buf;
+        else
+            name = DEFAULT_NAME;
 
         if(!filter_event(dev.event, input->d_name)) goto skip;
 
@@ -197,6 +211,12 @@ void poll_devices() {
 
         dev.hidraw = open(hidraw_path, O_WRONLY);
         if(dev.hidraw < 0) goto skip;
+
+        dev.name = malloc(256);
+        if(dev.name == NULL)
+            dev.name = DEFAULT_NAME;
+        else
+            strcpy(dev.name, name);
 
         pthread_mutex_lock(&devices_mutex);
         vec_push(&devices, &uniq);
