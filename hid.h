@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef HID_H
 #define HID_H
 #include "net.h"
@@ -8,9 +8,9 @@
 typedef uint64_t uniq_t;
 
 typedef struct {
-    uint8_t abs_indices[ABS_CNT];
-    uint8_t rel_indices[REL_CNT];
-    uint8_t key_indices[KEY_CNT];
+    uint16_t abs_indices[ABS_CNT];
+    uint16_t rel_indices[REL_CNT];
+    uint16_t key_indices[KEY_CNT];
 } DeviceMap;
 
 typedef struct {

@@ -1,3 +1,7 @@
+#include "hid.h"
+
+#include "vec.h"
+
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/input.h>
@@ -9,9 +13,6 @@
 #include <sys/ioctl.h>
 #include <time.h>
 #include <unistd.h>
-
-#include "hid.h"
-#include "vec.h"
 
 // List of uniq of the currently known devices
 static Vec devices;
@@ -59,7 +60,7 @@ void setup_device(PhysicalDevice *dev) {
     for (int i = 0; i < ABS_CNT; i++)
         dev->mapping.abs_indices[i] = -1;
     for (int i = 0; i < REL_CNT; i++)
-        dev->mapping.key_indices[i] = -1;
+        dev->mapping.rel_indices[i] = -1;
     for (int i = 0; i < KEY_CNT; i++)
         dev->mapping.key_indices[i] = -1;
 
@@ -74,7 +75,7 @@ void setup_device(PhysicalDevice *dev) {
                     if (i == EV_ABS) {
                         struct input_absinfo abs;
                         ioctl(dev->event, EVIOCGABS(j), &abs);
-                        uint8_t index                    = dev->device_info.abs_count++;
+                        uint16_t index                    = dev->device_info.abs_count++;
                         dev->device_info.abs_id[index]   = j;
                         dev->device_info.abs_min[index]  = abs.minimum;
                         dev->device_info.abs_max[index]  = abs.maximum;
@@ -83,11 +84,11 @@ void setup_device(PhysicalDevice *dev) {
                         dev->device_info.abs_res[index]  = abs.resolution;
                         dev->mapping.abs_indices[j]      = index;
                     } else if (i == EV_REL) {
-                        uint8_t index                  = dev->device_info.rel_count++;
+                        uint16_t index                  = dev->device_info.rel_count++;
                         dev->device_info.rel_id[index] = j;
                         dev->mapping.rel_indices[j]    = index;
                     } else if (i == EV_KEY) {
-                        uint8_t index                  = dev->device_info.key_count++;
+                        uint16_t index                  = dev->device_info.key_count++;
                         dev->device_info.key_id[index] = j;
                         dev->mapping.key_indices[j]    = index;
                     }
@@ -153,10 +154,10 @@ PhysicalDevice get_device() {
 
 void return_device(PhysicalDevice *dev) {
     if (dev->name != NULL && dev->name != DEFAULT_NAME) {
-        printf("HID: Returning device '%s' (%012lx)\n", dev->name, dev->uniq);
+        printf("HID:     Returning device '%s' (%012lx)\n", dev->name, dev->uniq);
         free(dev->name);
     } else {
-        printf("HID: Returning device %012lx\n", dev->uniq);
+        printf("HID:     Returning device %012lx\n", dev->uniq);
     }
     close(dev->event);
     close(dev->hidraw);
@@ -272,7 +273,7 @@ void poll_devices() {
         pthread_mutex_unlock(&devices_mutex);
         vec_push(&new_devices, &dev);
 
-        printf("HID: New device, %s (%s: %012lx)\n", name, input->d_name, dev.uniq);
+        printf("HID:     New device, %s (%s: %012lx)\n", name, input->d_name, dev.uniq);
         continue;
 
         // close open file descriptor and continue
@@ -311,7 +312,7 @@ void apply_controller_state(PhysicalDevice *dev, MessageControllerState *state) 
 }
 
 void *hid_thread() {
-    printf("HID: start\n");
+    printf("HID:     start\n");
     poll_devices_init();
     while (1) {
         poll_devices();

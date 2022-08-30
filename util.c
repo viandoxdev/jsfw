@@ -1,8 +1,8 @@
+#include "util.h"
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-
-#include "util.h"
 
 #ifndef __has_builtin
 #define __has_builtin(_) 0

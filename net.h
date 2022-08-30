@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef NET_H
 #define NET_H
 #include <linux/input.h>
@@ -12,46 +12,40 @@ typedef enum {
     ControllerState = 4,
 } MessageCode;
 
-// TODO: replace counts by uint16_t
 typedef struct {
     MessageCode code;
 
-    uint8_t abs_count;
-    uint8_t rel_count;
-    uint8_t key_count;
+    uint16_t abs_count;
+    uint16_t rel_count;
+    uint16_t key_count;
 
-    uint8_t  abs_id[ABS_CNT];
+    uint16_t  abs_id[ABS_CNT];
     uint32_t abs_min[ABS_CNT];
     uint32_t abs_max[ABS_CNT];
     uint32_t abs_fuzz[ABS_CNT];
     uint32_t abs_flat[ABS_CNT];
     uint32_t abs_res[ABS_CNT];
 
-    uint8_t rel_id[REL_CNT];
+    uint16_t rel_id[REL_CNT];
 
-    uint8_t key_id[KEY_CNT];
+    uint16_t key_id[KEY_CNT];
 } MessageDeviceInfo;
-#define MSS_DEVICE_INFO(abs, rel, key) (3 + abs * 21 + rel * 1 + key * 1)
+#define MSS_DEVICE_INFO(abs, rel, key) (6 + abs * 22 + rel * 2 + key * 2)
 // MSS -> Message Serialized Size:
 // Size of the data of the message when serialized (no alignment / padding)
 
 typedef struct {
     MessageCode code;
 
-    uint8_t abs_count;
-    uint8_t rel_count;
-    uint8_t key_count;
+    uint16_t abs_count;
+    uint16_t rel_count;
+    uint16_t key_count;
 
     uint32_t abs[ABS_CNT];
     uint32_t rel[REL_CNT];
     uint8_t  key[KEY_CNT];
 } MessageDeviceReport;
-#define MSS_DEVICE_REPORT(abs, rel, key) (3 + abs * 4 + rel * 4 + key * 1)
-
-typedef struct {
-    MessageCode code;
-} MessageDeviceDestroy;
-#define MSS_DEVICE_DESTROY 0
+#define MSS_DEVICE_REPORT(abs, rel, key) (6 + abs * 4 + rel * 4 + key * 1)
 
 typedef struct {
     MessageCode code;
@@ -68,7 +62,6 @@ typedef union {
     MessageCode            code;
     MessageDeviceInfo      device_info;
     MessageDeviceReport    device_report;
-    MessageDeviceDestroy   device_destroy;
     MessageControllerState controller_state;
 } Message;
 

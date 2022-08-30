@@ -1,14 +1,15 @@
+#include "main.h"
+
+#include "client.h"
+#include "hid.h"
+#include "server.h"
+#include "util.h"
+
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "client.h"
-#include "hid.h"
-#include "main.h"
-#include "server.h"
-#include "util.h"
 
 const char *USAGE[] = {
     "jsfw client [address] [port]\n",

@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef MAIN_H
 #define MAIN_H
 

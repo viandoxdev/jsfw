@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef VEC_H
 #define VEC_H
 #include <unistd.h>

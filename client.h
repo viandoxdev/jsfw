@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef CLIENT_H
 #define CLIENT_H
 #include <stdint.h>

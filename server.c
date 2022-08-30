@@ -1,3 +1,7 @@
+#include "hid.h"
+#include "net.h"
+#include "util.h"
+
 #include <linux/input.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -10,10 +14,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
-#include "hid.h"
-#include "net.h"
-#include "util.h"
 
 struct Connection {
     int      socket;
@@ -62,15 +62,28 @@ void *server_handle_conn(void *args_) {
     report.rel_count = dev.device_info.rel_count;
     report.key_count = dev.device_info.key_count;
 
+    char *closing_message = "";
+
     while (1) {
         int rc = poll(pfds, 2, -1);
-        if (rc < 0) // error (connection closed)
+        if (rc < 0) { // error (connection closed)
+            closing_message = "Poll error";
             goto conn_end;
+        }
+
+        // Shutdown connection if we lost the peer
+        if (socket_poll->revents & POLLHUP || socket_poll->revents & POLLERR) {
+            closing_message = "Lost peer";
+            goto conn_end;
+        }
 
         if (socket_poll->revents & POLLIN) {
             int len = recv(args->socket, buf, 2048, 0);
-            if (len <= 0)
+
+            if (len <= 0) {
+                closing_message = "Lost peer";
                 goto conn_end;
+            }
 
             Message msg;
             if (msg_deserialize(buf, len, &msg) == 0) {
@@ -85,11 +98,23 @@ void *server_handle_conn(void *args_) {
                 printf("CONN(%d): Couldn't parse message.\n", args->id);
             }
         }
+
+        // Shutdown connection if we lost the device
+        if (event_poll->revents & POLLHUP || event_poll->revents & POLLERR) {
+            closing_message = "Lost device";
+            goto conn_end;
+        }
+
         if (event_poll->revents & POLLIN) {
             struct input_event event;
-            int                len = read(dev.event, &event, sizeof(struct input_event));
-            if (len <= 0)
+
+            int len = read(dev.event, &event, sizeof(struct input_event));
+
+            if (len <= 0) {
+                closing_message = "Lost device";
                 goto conn_end;
+            }
+
             if (len < sizeof(struct input_event)) {
                 printf("CONN(%d): error reading event\n", args->id);
                 continue;
@@ -129,7 +154,6 @@ void *server_handle_conn(void *args_) {
                     printf("CONN(%d): Invalid key\n", args->id);
                     continue;
                 };
-
                 report.key[index] = !!event.value;
             }
         }
@@ -137,14 +161,14 @@ void *server_handle_conn(void *args_) {
 
 conn_end:
     shutdown(args->socket, SHUT_RDWR);
-    printf("CONN(%u): connection closed\n", args->id);
+    printf("CONN(%u): connection closed (%s)\n", args->id, closing_message);
     return_device(&dev);
     free(args);
     return NULL;
 }
 
 void server_run(uint16_t port) {
-    printf("SERVER: start\n");
+    printf("SERVER:  start\n");
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
@@ -170,7 +194,7 @@ void server_run(uint16_t port) {
         conn.socket = accept(sock, &con_addr, &con_len);
 
         if (conn.socket >= 0) {
-            printf("SERVER: got connection\n");
+            printf("SERVER:  got connection\n");
 
             conn.id = ids++;
 

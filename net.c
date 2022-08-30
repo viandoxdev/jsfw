@@ -1,4 +1,5 @@
 #include "net.h"
+
 #include <stdio.h>
 
 Message msg_device_info() {
@@ -18,16 +19,17 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
     uint8_t     code_byte = buf[0];
     MessageCode code      = (MessageCode)code_byte;
 
-    uint8_t abs, rel, key;
+    uint16_t abs, rel, key, *buf16;
 
     switch (code) {
     case DeviceInfo:
-        if (len < 3)
+        if (len < 6)
             return -1;
-        abs = buf[1];
-        rel = buf[2];
-        key = buf[3];
-        buf += 4;
+        buf16 = (uint16_t *)(buf + 1);
+        abs   = buf16[0];
+        rel   = buf16[1];
+        key   = buf16[2];
+        buf += 7;
         if (MSS_DEVICE_INFO(abs, rel, key) > len)
             return -1;
 
@@ -38,33 +40,38 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
 
         // SOA in c but serialized as AOS
         for (int i = 0; i < abs; i++) {
-            uint32_t *buf32 = (uint32_t *)(buf + 1);
+            uint32_t *buf32 = (uint32_t *)(buf + 2);
 
-            dst->device_info.abs_id[i]   = buf[0];
+            dst->device_info.abs_id[i]   = *(uint16_t *)buf;
             dst->device_info.abs_min[i]  = buf32[0];
             dst->device_info.abs_max[i]  = buf32[1];
             dst->device_info.abs_fuzz[i] = buf32[2];
             dst->device_info.abs_flat[i] = buf32[3];
             dst->device_info.abs_res[i]  = buf32[4];
 
-            buf += 21;
+            buf += 22;
         }
 
-        for (int i = 0; i < rel; i++)
-            dst->device_info.rel_id[i] = *(buf++);
+        for (int i = 0; i < rel; i++) {
+            dst->device_info.rel_id[i] = *(uint16_t *)buf;
+            buf += 2;
+        }
 
-        for (int i = 0; i < key; i++)
-            dst->device_info.key_id[i] = *(buf++);
+        for (int i = 0; i < key; i++) {
+            dst->device_info.key_id[i] = *(uint16_t *)buf;
+            buf += 2;
+        }
 
         return 0;
     case DeviceReport:
-        if (len < 3)
+        if (len < 6)
             return -1;
 
-        abs = buf[1];
-        rel = buf[2];
-        key = buf[3];
-        buf += 4;
+        buf16 = (uint16_t *)(buf + 1);
+        abs   = buf16[0];
+        rel   = buf16[1];
+        key   = buf16[2];
+        buf += 7;
         if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
 
@@ -86,11 +93,6 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
         for (int i = 0; i < key; i++)
             dst->device_report.key[i] = *(buf++);
 
-        return 0;
-    case DeviceDestroy:
-        if (len < MSS_DEVICE_DESTROY)
-            return -1;
-        dst->code = code;
         return 0;
     case ControllerState:
         if (len < MSS_CONTROLLER_STATE)
@@ -115,7 +117,7 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
     if (len-- == 0)
         return -1;
 
-    uint8_t abs, rel, key;
+    uint16_t abs, rel, key, *buf16;
 
     switch (msg->code) {
     case DeviceInfo:
@@ -125,30 +127,36 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
         if (len < MSS_DEVICE_INFO(abs, rel, key))
             return -1;
 
-        buf[0] = (uint8_t)msg->code;
-        buf[1] = abs;
-        buf[2] = rel;
-        buf[3] = key;
-        buf += 4;
+        buf[0]   = (uint8_t)msg->code;
+        buf16    = (uint16_t *)(buf + 1);
+        buf16[0] = abs;
+        buf16[1] = rel;
+        buf16[2] = key;
+        buf += 7;
 
         for (int i = 0; i < abs; i++) {
-            uint32_t *buf32 = (uint32_t *)(buf + 1);
+            uint32_t *buf32 = (uint32_t *)(buf + 2);
 
-            buf[0]   = msg->device_info.abs_id[i];
+            *(uint16_t *)buf = msg->device_info.abs_id[i];
+
             buf32[0] = msg->device_info.abs_min[i];
             buf32[1] = msg->device_info.abs_max[i];
             buf32[2] = msg->device_info.abs_fuzz[i];
             buf32[3] = msg->device_info.abs_flat[i];
             buf32[4] = msg->device_info.abs_res[i];
 
-            buf += 21;
+            buf += 22;
         }
 
-        for (int i = 0; i < rel; i++)
-            *(buf++) = msg->device_info.rel_id[i];
+        for (int i = 0; i < rel; i++) {
+            *(uint16_t *)buf = msg->device_info.rel_id[i];
+            buf += 2;
+        }
 
-        for (int i = 0; i < key; i++)
-            *(buf++) = msg->device_info.key_id[i];
+        for (int i = 0; i < key; i++) {
+            *(uint16_t *)buf = msg->device_info.key_id[i];
+            buf += 2;
+        }
 
         return MSS_DEVICE_INFO(abs, rel, key) + 1;
     case DeviceReport:
@@ -157,11 +165,13 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
         key = msg->device_report.key_count;
         if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
-        buf[0] = (uint8_t)msg->code;
-        buf[1] = abs;
-        buf[2] = rel;
-        buf[3] = key;
-        buf += 4;
+
+        buf[0]   = (uint8_t)msg->code;
+        buf16    = (uint16_t *)(buf + 1);
+        buf16[0] = abs;
+        buf16[1] = rel;
+        buf16[2] = key;
+        buf += 7;
 
         for (int i = 0; i < abs; i++) {
             *(uint32_t *)buf = msg->device_report.abs[i];
@@ -177,12 +187,6 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
             *(buf++) = msg->device_report.key[i];
 
         return MSS_DEVICE_REPORT(abs, rel, key) + 1;
-    case DeviceDestroy:
-        if (len < MSS_DEVICE_DESTROY)
-            return -1;
-
-        buf[0] = (uint8_t)msg->code;
-        return MSS_DEVICE_DESTROY + 1;
     case ControllerState:
         if (len < MSS_CONTROLLER_STATE)
             return -1;

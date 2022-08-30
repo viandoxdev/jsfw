@@ -1,4 +1,4 @@
-// vi: set ft=c
+// vi:ft=c
 #ifndef UTIL_H
 #define UTIL_H
 
