@@ -57,6 +57,13 @@ void setup_device(PhysicalDevice *dev) {
     dev->device_info.rel_count = 0;
     dev->device_info.key_count = 0;
 
+    for(int i = 0; i < ABS_CNT; i++)
+        dev->mapping.abs_indices[i] = -1;
+    for(int i = 0; i < REL_CNT; i++)
+        dev->mapping.key_indices[i] = -1;
+    for(int i = 0; i < KEY_CNT; i++)
+        dev->mapping.key_indices[i] = -1;
+
     uint8_t bits[EV_MAX]       = {};
     uint8_t feat_bits[KEY_MAX] = {};
     ioctl(dev->event, EVIOCGBIT(0, EV_MAX), bits);

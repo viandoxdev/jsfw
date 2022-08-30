@@ -12,6 +12,7 @@ typedef enum {
     ControllerState = 4,
 } MessageCode;
 
+// TODO: replace counts by uint16_t
 typedef struct {
     MessageCode code;
 
@@ -36,8 +37,16 @@ typedef struct {
 
 typedef struct {
     MessageCode code;
+
+    uint8_t abs_count;
+    uint8_t rel_count;
+    uint8_t key_count;
+
+    uint32_t abs[ABS_CNT];
+    uint32_t rel[REL_CNT];
+    uint8_t  key[KEY_CNT];
 } MessageDeviceReport;
-#define MSS_DEVICE_REPORT 0
+#define MSS_DEVICE_REPORT(abs, rel, key) (3 + abs * 4 + rel * 4 + key * 1)
 
 typedef struct {
     MessageCode code;

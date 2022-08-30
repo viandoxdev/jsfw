@@ -47,18 +47,28 @@ void *server_handle_conn(void *args_) {
     int len = msg_serialize(buf, 2048, (Message *)&dev.device_info);
     write(args->socket, buf, len);
 
-    struct pollfd pfd[2] = {};
-    pfd[0].fd            = args->socket;
-    pfd[0].events        = POLLIN;
-    pfd[1].fd            = dev.event;
-    pfd[1].events        = POLLIN;
+    struct pollfd  pfds[2]     = {};
+    struct pollfd *socket_poll = &pfds[0];
+    struct pollfd *event_poll  = &pfds[1];
+
+    socket_poll->fd     = args->socket;
+    socket_poll->events = POLLIN;
+    event_poll->fd      = dev.event;
+    event_poll->events  = POLLIN;
+
+    MessageDeviceReport report = {};
+    
+    report.code = DeviceReport;
+    report.abs_count = dev.device_info.abs_count;
+    report.rel_count = dev.device_info.rel_count;
+    report.key_count = dev.device_info.key_count;
 
     while (1) {
-        int rc = poll(pfd, 1, -1);
+        int rc = poll(pfds, 2, -1);
         if (rc < 0) // error (connection closed)
             goto conn_end;
 
-        if (pfd[0].revents & POLLIN) {
+        if (socket_poll->revents & POLLIN) {
             int len = recv(args->socket, buf, 2048, 0);
             if (len <= 0)
                 goto conn_end;
@@ -66,8 +76,8 @@ void *server_handle_conn(void *args_) {
             Message msg;
             if (msg_deserialize(buf, len, &msg) == 0) {
 
-                if(msg.code == ControllerState) {
-                    apply_controller_state(&dev, (MessageControllerState*)&msg);
+                if (msg.code == ControllerState) {
+                    apply_controller_state(&dev, (MessageControllerState *)&msg);
                 } else {
                     printf("CONN(%d): Illegal message\n", args->id);
                 }
@@ -76,8 +86,53 @@ void *server_handle_conn(void *args_) {
                 printf("CONN(%d): Couldn't parse message.\n", args->id);
             }
         }
-        if (pfd[1].revents & POLLIN) {
+        if (event_poll->revents & POLLIN) {
+            struct input_event event;
+            int                len = read(dev.event, &event, sizeof(struct input_event));
+            if (len <= 0)
+                goto conn_end;
+            if (len < sizeof(struct input_event)) {
+                printf("CONN(%d): error reading event\n", args->id);
+                continue;
+            }
 
+            if (event.type == EV_SYN) {
+                int len = msg_serialize(buf, 2048, (Message *)&report);
+
+                if (len < 0) {
+                    printf("CONN(%d): Couldn't serialize report %d\n", args->id, len);
+                    continue;
+                };
+
+                write(args->socket, buf, len);
+            } else if (event.type == EV_ABS) {
+                int index = dev.mapping.abs_indices[event.code];
+
+                if (index < 0) {
+                    printf("CONN(%d): Invalid abs\n", args->id);
+                    continue;
+                };
+
+                report.abs[index] = event.value;
+            } else if (event.type == EV_REL) {
+                int index = dev.mapping.rel_indices[event.code];
+
+                if (index < 0) {
+                    printf("CONN(%d): Invalid rel\n", args->id);
+                    continue;
+                };
+
+                report.rel[index] = event.value;
+            } else if (event.type == EV_KEY) {
+                int index = dev.mapping.key_indices[event.code];
+
+                if (index < 0) {
+                    printf("CONN(%d): Invalid key\n", args->id);
+                    continue;
+                };
+
+                report.key[index] = !!event.value;
+            }
         }
     }
 

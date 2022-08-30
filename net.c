@@ -1,4 +1,5 @@
 #include "net.h"
+#include <stdio.h>
 
 Message msg_device_info() {
     MessageDeviceInfo m;
@@ -17,18 +18,20 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
     uint8_t     code_byte = buf[0];
     MessageCode code      = (MessageCode)code_byte;
 
+    uint8_t abs, rel, key;
+
     switch (code) {
     case DeviceInfo:
         if (len < 3)
             return -1;
-        uint8_t abs = buf[1];
-        uint8_t rel = buf[2];
-        uint8_t key = buf[3];
+        abs = buf[1];
+        rel = buf[2];
+        key = buf[3];
         buf += 4;
         if (MSS_DEVICE_INFO(abs, rel, key) > len)
             return -1;
 
-        dst->code                  = code;
+        dst->device_info.code      = code;
         dst->device_info.abs_count = abs;
         dst->device_info.rel_count = rel;
         dst->device_info.key_count = key;
@@ -55,9 +58,34 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
 
         return 0;
     case DeviceReport:
-        if (len < MSS_DEVICE_REPORT)
+        if (len < 3)
             return -1;
-        dst->code = code;
+
+        abs = buf[1];
+        rel = buf[2];
+        key = buf[3];
+        buf += 4;
+        if (len < MSS_DEVICE_REPORT(abs, rel, key))
+            return -1;
+
+        dst->device_report.code      = code;
+        dst->device_report.abs_count = abs;
+        dst->device_report.rel_count = rel;
+        dst->device_report.key_count = key;
+
+        for (int i = 0; i < abs; i++) {
+            dst->device_report.abs[i] = *(uint32_t *)buf;
+            buf += 4;
+        }
+
+        for (int i = 0; i < rel; i++) {
+            dst->device_report.rel[i] = *(uint32_t *)buf;
+            buf += 4;
+        }
+
+        for (int i = 0; i < key; i++)
+            dst->device_report.key[i] = *(buf++);
+
         return 0;
     case DeviceDestroy:
         if (len < MSS_DEVICE_DESTROY)
@@ -82,18 +110,19 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
     }
 }
 
-// The indices have to match with msg_deserialize
 int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
     // If len is 0 we can't serialize any message
     if (len-- == 0)
         return -1;
 
+    uint8_t abs, rel, key;
+
     switch (msg->code) {
-    case DeviceInfo:; // semicolon needed here
-        uint8_t abs = msg->device_info.abs_count;
-        uint8_t rel = msg->device_info.rel_count;
-        uint8_t key = msg->device_info.key_count;
-        if (len < MSS_DEVICE_INFO(abs, rel, len))
+    case DeviceInfo:
+        abs = msg->device_info.abs_count;
+        rel = msg->device_info.rel_count;
+        key = msg->device_info.key_count;
+        if (len < MSS_DEVICE_INFO(abs, rel, key))
             return -1;
 
         buf[0] = (uint8_t)msg->code;
@@ -123,11 +152,31 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
 
         return MSS_DEVICE_INFO(abs, rel, key) + 1;
     case DeviceReport:
-        if (len < MSS_DEVICE_REPORT)
+        abs = msg->device_report.abs_count;
+        rel = msg->device_report.rel_count;
+        key = msg->device_report.key_count;
+        if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
-
         buf[0] = (uint8_t)msg->code;
-        return MSS_DEVICE_REPORT + 1;
+        buf[1] = abs;
+        buf[2] = rel;
+        buf[3] = key;
+        buf += 4;
+
+        for (int i = 0; i < abs; i++) {
+            *(uint32_t *)buf = msg->device_report.abs[i];
+            buf += 4;
+        }
+
+        for (int i = 0; i < rel; i++) {
+            *(uint32_t *)buf = msg->device_report.rel[i];
+            buf += 4;
+        }
+
+        for (int i = 0; i < key; i++)
+            *(buf++) = msg->device_report.key[i];
+
+        return MSS_DEVICE_REPORT(abs, rel, key) + 1;
     case DeviceDestroy:
         if (len < MSS_DEVICE_DESTROY)
             return -1;
@@ -148,6 +197,7 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
         buf[7] = msg->controller_state.flash_off;
         return MSS_CONTROLLER_STATE + 1;
     default:
+        printf("ERR(msg_serialize): Trying to serialize unknown message of code %d\n", msg->code);
         return -1;
     }
 }
