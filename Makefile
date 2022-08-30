@@ -1,6 +1,6 @@
 Q=@
 CC=gcc
-CFLAGS=-g -Wall -Wno-format-truncation
+CFLAGS=-g -Wall -Wno-format-truncation -pthread
 LDFLAGS=
 BUILD_DIR=./objects
 BIN=jsfw
