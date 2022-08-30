@@ -1,29 +1,38 @@
 // vi: set ft=c
 #ifndef NET_H
 #define NET_H
-#include<stdint.h>
-#include<stdlib.h>
+#include <linux/input.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 typedef enum {
-    Heartbeat = 0,
-    DeviceInfo = 1,
-    DeviceReport = 2,
-    DeviceDestroy = 3,
+    DeviceInfo      = 1,
+    DeviceReport    = 2,
+    DeviceDestroy   = 3,
     ControllerState = 4,
 } MessageCode;
 
 typedef struct {
     MessageCode code;
-    uint8_t alive;
-} MessageHeartbeat;
-#define MSS_HEARTBEAT 1
+
+    uint8_t abs_count;
+    uint8_t rel_count;
+    uint8_t key_count;
+
+    uint8_t  abs_id[ABS_CNT];
+    uint32_t abs_min[ABS_CNT];
+    uint32_t abs_max[ABS_CNT];
+    uint32_t abs_fuzz[ABS_CNT];
+    uint32_t abs_flat[ABS_CNT];
+    uint32_t abs_res[ABS_CNT];
+
+    uint8_t rel_id[REL_CNT];
+
+    uint8_t key_id[KEY_CNT];
+} MessageDeviceInfo;
+#define MSS_DEVICE_INFO(abs, rel, key) (3 + abs * 21 + rel * 1 + key * 1)
 // MSS -> Message Serialized Size:
 // Size of the data of the message when serialized (no alignment / padding)
-
-typedef struct {
-    MessageCode code;
-} MessageDeviceInfo;
-#define MSS_DEVICE_INFO 0
 
 typedef struct {
     MessageCode code;
@@ -35,8 +44,9 @@ typedef struct {
 } MessageDeviceDestroy;
 #define MSS_DEVICE_DESTROY 0
 
-typedef struct  {
+typedef struct {
     MessageCode code;
+
     uint8_t led[3];
     uint8_t small_rumble;
     uint8_t big_rumble;
@@ -46,15 +56,18 @@ typedef struct  {
 #define MSS_CONTROLLER_STATE 7
 
 typedef union {
-    MessageCode code;
-    MessageHeartbeat heartbeat;
-    MessageDeviceInfo device_info;
-    MessageDeviceReport device_report;
-    MessageDeviceDestroy device_destroy;
+    MessageCode            code;
+    MessageDeviceInfo      device_info;
+    MessageDeviceReport    device_report;
+    MessageDeviceDestroy   device_destroy;
     MessageControllerState controller_state;
 } Message;
 
-int msg_deserialize(const uint8_t * buf, size_t len, Message * dst);
-int msg_serialize(uint8_t * buf, size_t len, Message msg);
+// Read a message from a buffer with a length, message goes into dst, returns -1 if a messsage couldn't be
+// read
+int msg_deserialize(const uint8_t *buf, size_t len, Message *dst);
+// Write a message to a buffer with a length, return -1 if the message couldn't be written (buffer not big
+// enough). Returns the length of the serialized message if succeeded.
+int msg_serialize(uint8_t *buf, size_t len, Message *msg);
 
 #endif

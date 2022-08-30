@@ -1,14 +1,19 @@
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <linux/input.h>
 #include <netinet/tcp.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 
 #include "hid.h"
-#include "main.h"
 #include "net.h"
+#include "util.h"
 #include "vec.h"
 
 struct Connection {
@@ -19,12 +24,13 @@ struct Connection {
 void *server_handle_conn(void *args_) {
     struct Connection *args = args_;
 
-    printf("THREAD(%u): start\n", args->id);
+    printf("CONN(%u): start\n", args->id);
 
-    int enable        = 1;
+    int enable        = true;
     int idle_time     = 10;
     int keep_count    = 5;
-    int keep_interval = 5;
+    int keep_interval = 2;
+
     if (setsockopt(args->socket, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) != 0)
         printf("ERR(server_handle_conn): Enabling socket keepalives on client\n");
     if (setsockopt(args->socket, SOL_TCP, TCP_KEEPIDLE, &idle_time, sizeof(idle_time)) != 0)
@@ -34,26 +40,50 @@ void *server_handle_conn(void *args_) {
     if (setsockopt(args->socket, SOL_TCP, TCP_KEEPINTVL, &keep_interval, sizeof(keep_interval)) != 0)
         printf("ERR(server_handle_conn): Setting idle retry interval\n");
 
+    uint8_t        buf[2048];
     PhysicalDevice dev = get_device();
-    printf("THREAD(%u): got device '%s'\n", args->id, dev.name);
+    printf("CONN(%u): got device '%s'\n", args->id, dev.name);
 
-    uint8_t buf[1024];
+    int len = msg_serialize(buf, 2048, (Message *)&dev.device_info);
+    write(args->socket, buf, len);
+
+    struct pollfd pfd[2] = {};
+    pfd[0].fd            = args->socket;
+    pfd[0].events        = POLLIN;
+    pfd[1].fd            = dev.event;
+    pfd[1].events        = POLLIN;
+
     while (1) {
-        int len = recv(args->socket, buf, 1024, MSG_WAITALL);
-
-        if (len <= 0)
+        int rc = poll(pfd, 1, -1);
+        if (rc < 0) // error (connection closed)
             goto conn_end;
 
-        Message msg;
-        if (msg_deserialize(buf, len, &msg) == 0) {
+        if (pfd[0].revents & POLLIN) {
+            int len = recv(args->socket, buf, 2048, 0);
+            if (len <= 0)
+                goto conn_end;
 
-        } else {
-            printf("Couldn't parse message.\n");
+            Message msg;
+            if (msg_deserialize(buf, len, &msg) == 0) {
+
+                if(msg.code == ControllerState) {
+                    apply_controller_state(&dev, (MessageControllerState*)&msg);
+                } else {
+                    printf("CONN(%d): Illegal message\n", args->id);
+                }
+
+            } else {
+                printf("CONN(%d): Couldn't parse message.\n", args->id);
+            }
+        }
+        if (pfd[1].revents & POLLIN) {
+
         }
     }
-    printf("THREAD(%u): connection closed\n", args->id);
 
 conn_end:
+    shutdown(args->socket, SHUT_RDWR);
+    printf("CONN(%u): connection closed\n", args->id);
     return_device(&dev);
     free(args);
     return NULL;

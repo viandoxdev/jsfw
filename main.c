@@ -12,20 +12,13 @@
 #include "main.h"
 #include "hid.h"
 #include "server.h"
+#include "util.h"
 
 const char* USAGE[] = {
         "jsfw client [address] [port]\n",
         "jsfw server [port]\n",
 };
 const size_t EVENT_SIZE = sizeof(struct js_event);
-
-void panicf(const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    vprintf(fmt, args);
-    va_end(args);
-    exit(1);
-}
 
 uint16_t parse_port(const char * str) {
     long long n = atoll(str);
@@ -37,9 +30,8 @@ uint16_t parse_port(const char * str) {
 void server(uint16_t port) {
     printf("Server (port: %u).\n", port);
 
-    pthread_t _;
-    pthread_create(&_, NULL, hid_thread, NULL);
-
+    pthread_t thread;
+    pthread_create(&thread, NULL, hid_thread, NULL);
     server_run(port);
 }
 
