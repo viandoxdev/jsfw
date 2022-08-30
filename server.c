@@ -1,20 +1,19 @@
-#include <arpa/inet.h>
-#include <fcntl.h>
 #include <linux/input.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "hid.h"
 #include "net.h"
 #include "util.h"
-#include "vec.h"
 
 struct Connection {
     int      socket;
@@ -57,8 +56,8 @@ void *server_handle_conn(void *args_) {
     event_poll->events  = POLLIN;
 
     MessageDeviceReport report = {};
-    
-    report.code = DeviceReport;
+
+    report.code      = DeviceReport;
     report.abs_count = dev.device_info.abs_count;
     report.rel_count = dev.device_info.rel_count;
     report.key_count = dev.device_info.key_count;

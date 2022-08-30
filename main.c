@@ -1,13 +1,8 @@
-#include <fcntl.h>
-#include <linux/joystick.h>
 #include <pthread.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
 
 #include "client.h"
 #include "hid.h"
@@ -19,7 +14,6 @@ const char *USAGE[] = {
     "jsfw client [address] [port]\n",
     "jsfw server [port]\n",
 };
-const size_t EVENT_SIZE = sizeof(struct js_event);
 
 uint16_t parse_port(const char *str) {
     long long n = atoll(str);
@@ -29,7 +23,7 @@ uint16_t parse_port(const char *str) {
 }
 
 void server(uint16_t port) {
-    printf("Server (port: %u).\n\n", port);
+    printf("[Server (port: %u)]\n\n", port);
 
     pthread_t thread;
     pthread_create(&thread, NULL, hid_thread, NULL);
@@ -37,7 +31,7 @@ void server(uint16_t port) {
 }
 
 void client(char *address, uint16_t port) {
-    printf("Client (%s:%d)\n\n", address, port);
+    printf("[Client (%s:%d)]\n\n", address, port);
     client_run(address, port);
 }
 

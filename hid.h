@@ -2,9 +2,7 @@
 #ifndef HID_H
 #define HID_H
 #include "net.h"
-#include "vec.h"
 #include <linux/input.h>
-#include <pthread.h>
 #include <stdint.h>
 
 typedef uint64_t uniq_t;

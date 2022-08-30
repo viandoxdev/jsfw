@@ -1,17 +1,16 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/input.h>
-#include <linux/joystick.h>
-#include <linux/uinput.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "hid.h"
-#include "main.h"
 #include "vec.h"
 
 // List of uniq of the currently known devices
@@ -57,11 +56,11 @@ void setup_device(PhysicalDevice *dev) {
     dev->device_info.rel_count = 0;
     dev->device_info.key_count = 0;
 
-    for(int i = 0; i < ABS_CNT; i++)
+    for (int i = 0; i < ABS_CNT; i++)
         dev->mapping.abs_indices[i] = -1;
-    for(int i = 0; i < REL_CNT; i++)
+    for (int i = 0; i < REL_CNT; i++)
         dev->mapping.key_indices[i] = -1;
-    for(int i = 0; i < KEY_CNT; i++)
+    for (int i = 0; i < KEY_CNT; i++)
         dev->mapping.key_indices[i] = -1;
 
     uint8_t bits[EV_MAX]       = {};
@@ -304,7 +303,7 @@ void apply_controller_state(PhysicalDevice *dev, MessageControllerState *state) 
     buf[10] = state->flash_off;
 
     write(dev->hidraw, buf, 32);
-    if(state->flash_on == 0 && state->flash_off == 0) {
+    if (state->flash_on == 0 && state->flash_off == 0) {
         fsync(dev->hidraw);
         // Send a second time because it doesn't work otherwise
         write(dev->hidraw, buf, 32);
