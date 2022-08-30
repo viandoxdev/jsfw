@@ -19,7 +19,7 @@ typedef struct {
     uint16_t rel_count;
     uint16_t key_count;
 
-    uint16_t  abs_id[ABS_CNT];
+    uint16_t abs_id[ABS_CNT];
     uint32_t abs_min[ABS_CNT];
     uint32_t abs_max[ABS_CNT];
     uint32_t abs_fuzz[ABS_CNT];

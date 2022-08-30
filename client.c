@@ -4,13 +4,11 @@
 #include "util.h"
 
 #include <arpa/inet.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,6 +18,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 
 typedef struct {
     int               fd;
@@ -158,7 +157,7 @@ void device_handle_report(MessageDeviceReport *report) {
     }
 
     for (int i = 0; i < report->key_count; i++) {
-        if (device_emit(EV_KEY, device.info.key_id[i], (uint32_t)(!report->key[i]) - 1 ) != 0)
+        if (device_emit(EV_KEY, device.info.key_id[i], (uint32_t)(!report->key[i]) - 1) != 0)
             printf("CLIENT: Error writing key event to uinput\n");
     }
 
@@ -291,10 +290,10 @@ void client_run(char *address, uint16_t port) {
             if (msg_deserialize(buf, len, &message) != 0) {
                 printf("CLIENT: Couldn't parse message (code: %d, len: %d)\n", buf[0], len);
                 int l = len > 100 ? 100 : len;
-                for(int i = 0; i < l; i++) {
+                for (int i = 0; i < l; i++) {
                     printf("%02x", buf[i]);
                 }
-                if(len > 100) {
+                if (len > 100) {
                     printf(" ... %d more bytes", len - 100);
                 }
                 printf("\n");

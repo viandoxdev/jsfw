@@ -75,7 +75,7 @@ void setup_device(PhysicalDevice *dev) {
                     if (i == EV_ABS) {
                         struct input_absinfo abs;
                         ioctl(dev->event, EVIOCGABS(j), &abs);
-                        uint16_t index                    = dev->device_info.abs_count++;
+                        uint16_t index                   = dev->device_info.abs_count++;
                         dev->device_info.abs_id[index]   = j;
                         dev->device_info.abs_min[index]  = abs.minimum;
                         dev->device_info.abs_max[index]  = abs.maximum;
@@ -84,11 +84,11 @@ void setup_device(PhysicalDevice *dev) {
                         dev->device_info.abs_res[index]  = abs.resolution;
                         dev->mapping.abs_indices[j]      = index;
                     } else if (i == EV_REL) {
-                        uint16_t index                  = dev->device_info.rel_count++;
+                        uint16_t index                 = dev->device_info.rel_count++;
                         dev->device_info.rel_id[index] = j;
                         dev->mapping.rel_indices[j]    = index;
                     } else if (i == EV_KEY) {
-                        uint16_t index                  = dev->device_info.key_count++;
+                        uint16_t index                 = dev->device_info.key_count++;
                         dev->device_info.key_id[index] = j;
                         dev->mapping.key_indices[j]    = index;
                     }

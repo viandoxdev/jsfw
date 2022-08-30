@@ -2,6 +2,7 @@
 #ifndef HID_H
 #define HID_H
 #include "net.h"
+
 #include <linux/input.h>
 #include <stdint.h>
 
