@@ -2,6 +2,7 @@
 #include "net.h"
 #include "util.h"
 
+#include <linux/input-event-codes.h>
 #include <linux/input.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -40,14 +41,14 @@ void *server_handle_conn(void *args_) {
         printf("ERR(server_handle_conn): Setting idle retry interval\n");
 
     uint8_t        buf[2048] __attribute__((aligned(4))) = {};
-    PhysicalDevice dev = get_device();
+    PhysicalDevice dev                                   = get_device();
     printf("CONN(%u): got device '%s'\n", args->id, dev.name);
 
     char *closing_message = "";
 
     int len = msg_serialize(buf, 2048, (Message *)&dev.device_info);
-    if(len > 0) {
-        if(write(args->socket, buf, len) == -1) {
+    if (len > 0) {
+        if (write(args->socket, buf, len) == -1) {
             perror("SERVER: Couldn't send device info, ");
             closing_message = "Socket error";
             goto conn_end;

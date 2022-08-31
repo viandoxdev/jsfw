@@ -4,21 +4,16 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <unistd.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-static JSONError jerrno = NoError;
-static size_t jerr_index = 0;
+static JSONError jerrno     = NoError;
+static size_t    jerr_index = 0;
 
-const char * json_strerr() {
-    return JSONErrorMessage[jerrno];
-}
+const char *json_strerr() { return JSONErrorMessage[jerrno]; }
 
-size_t json_err_loc() {
-    return jerr_index;
-}
+size_t json_err_loc() { return jerr_index; }
 
 // Shorthand to set jerno and return -1;
 static inline int set_jerrno(JSONError err) {
@@ -26,7 +21,7 @@ static inline int set_jerrno(JSONError err) {
     return -1;
 }
 static inline size_t align_8(size_t n) { return (((n - 1) >> 3) + 1) << 3; }
-static inline bool is_whitespace(char c) { return c == ' ' || c == '\t' || c == '\n'; }
+static inline bool   is_whitespace(char c) { return c == ' ' || c == '\t' || c == '\n'; }
 
 static int json_parse_value(const char **buf, const char *buf_end, uint8_t **restrict dst,
                             const uint8_t *dst_end);
@@ -272,22 +267,24 @@ static int json_parse_boolean(const char **buf, const char *buf_end, uint8_t **r
     }
 
     JSONHeader *header = (JSONHeader *)(*dst);
-    uint64_t     *value  = (uint64_t *)((*dst) + sizeof(JSONHeader));
+    uint64_t   *value  = (uint64_t *)((*dst) + sizeof(JSONHeader));
     *dst += sizeof(JSONHeader) + 8;
 
     header->type = (uint32_t)Boolean;
     header->len  = 8;
 
-    if(**buf == 't') {
-        if(*buf + 4 > buf_end) return set_jerrno(SrcOverflow);
-        if(strncmp(*buf, "true", 4) != 0) {
+    if (**buf == 't') {
+        if (*buf + 4 > buf_end)
+            return set_jerrno(SrcOverflow);
+        if (strncmp(*buf, "true", 4) != 0) {
             return set_jerrno(BadKeyword);
         }
         *buf += 4;
         *value = 1;
-    } else if(**buf == 'f') {
-        if(*buf + 5 > buf_end) return set_jerrno(SrcOverflow);
-        if(strncmp(*buf, "false", 5) != 0) {
+    } else if (**buf == 'f') {
+        if (*buf + 5 > buf_end)
+            return set_jerrno(SrcOverflow);
+        if (strncmp(*buf, "false", 5) != 0) {
             return set_jerrno(BadKeyword);
         }
         *buf += 5;
@@ -300,7 +297,7 @@ static int json_parse_boolean(const char **buf, const char *buf_end, uint8_t **r
 
 // *dst must be 8 aligned
 static int json_parse_null(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                              const uint8_t *dst_end) {
+                           const uint8_t *dst_end) {
 
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -312,8 +309,9 @@ static int json_parse_null(const char **buf, const char *buf_end, uint8_t **rest
     header->type = (uint32_t)Null;
     header->len  = 0;
 
-    if(*buf + 4 > buf_end) return set_jerrno(SrcOverflow);
-    if(strncmp(*buf, "null", 4) != 0) {
+    if (*buf + 4 > buf_end)
+        return set_jerrno(SrcOverflow);
+    if (strncmp(*buf, "null", 4) != 0) {
         return set_jerrno(BadKeyword);
     }
     *buf += 4;
@@ -322,7 +320,7 @@ static int json_parse_null(const char **buf, const char *buf_end, uint8_t **rest
 
 // *dst must be 8 aligned
 static int json_parse_array(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                              const uint8_t *dst_end) {
+                            const uint8_t *dst_end) {
 
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -330,25 +328,30 @@ static int json_parse_array(const char **buf, const char *buf_end, uint8_t **res
 
     JSONHeader *header = (JSONHeader *)(*dst);
     *dst += sizeof(JSONHeader);
-    uint8_t * dst_arr_start = *dst;
+    uint8_t *dst_arr_start = *dst;
 
     header->type = (uint32_t)Array;
 
     (*buf)++; // Skip [
     // skip initial whitespace
-    for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
-    if(*buf == buf_end) return set_jerrno(SrcOverflow);
-    if(**buf == ']') {
+    for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+        ;
+    if (*buf == buf_end)
+        return set_jerrno(SrcOverflow);
+    if (**buf == ']') {
         header->len = 0;
         return 0;
     }
-    while(1) {
-        if (json_parse_value(buf, buf_end, dst, dst_end) != 0) return -1;
-        for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
-        if (*buf == buf_end) return set_jerrno(SrcOverflow);
-        if(**buf == ',') {
+    while (1) {
+        if (json_parse_value(buf, buf_end, dst, dst_end) != 0)
+            return -1;
+        for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+            ;
+        if (*buf == buf_end)
+            return set_jerrno(SrcOverflow);
+        if (**buf == ',') {
             (*buf)++;
-        } else if(**buf == ']') {
+        } else if (**buf == ']') {
             (*buf)++;
             break;
         } else {
@@ -361,7 +364,7 @@ static int json_parse_array(const char **buf, const char *buf_end, uint8_t **res
 
 // *dst must be 8 aligned
 static int json_parse_object(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                              const uint8_t *dst_end) {
+                             const uint8_t *dst_end) {
 
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -369,41 +372,51 @@ static int json_parse_object(const char **buf, const char *buf_end, uint8_t **re
 
     JSONHeader *header = (JSONHeader *)(*dst);
     *dst += sizeof(JSONHeader);
-    uint8_t * dst_obj_start = *dst;
+    uint8_t *dst_obj_start = *dst;
 
     header->type = (uint32_t)Object;
 
     (*buf)++; // Skip {
 
-    for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
-    if(*buf == buf_end) return set_jerrno(SrcOverflow);
-    if(**buf == '}') {
+    for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+        ;
+    if (*buf == buf_end)
+        return set_jerrno(SrcOverflow);
+    if (**buf == '}') {
         header->len = 0;
         return 0;
     }
 
-    while(1) {
+    while (1) {
         // Skip whitespace before key
-        for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
+        for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+            ;
         // Parse key
-        if (json_parse_string(buf, buf_end, dst, dst_end) != 0) return -1;
+        if (json_parse_string(buf, buf_end, dst, dst_end) != 0)
+            return -1;
         // Skip whitespace after key
-        for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
+        for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+            ;
         // There should be at least one char
-        if(*buf == buf_end) return set_jerrno(SrcOverflow);
+        if (*buf == buf_end)
+            return set_jerrno(SrcOverflow);
         // There should be a colon
-        if(**buf != ':') return set_jerrno(ObjectBadChar);
+        if (**buf != ':')
+            return set_jerrno(ObjectBadChar);
         // Skip colon
         (*buf)++;
         // Parse value (takes char of whitespace)
-        if (json_parse_value(buf, buf_end, dst, dst_end) != 0) return -1;
+        if (json_parse_value(buf, buf_end, dst, dst_end) != 0)
+            return -1;
         // Skip whitespace after value
-        for(; *buf < buf_end && is_whitespace(**buf); (*buf)++);
+        for (; *buf < buf_end && is_whitespace(**buf); (*buf)++)
+            ;
         // There should be at least one char (} or ,)
-        if (*buf == buf_end) return set_jerrno(SrcOverflow);
-        if(**buf == ',') {
+        if (*buf == buf_end)
+            return set_jerrno(SrcOverflow);
+        if (**buf == ',') {
             (*buf)++;
-        } else if(**buf == '}') {
+        } else if (**buf == '}') {
             (*buf)++;
             break;
         } else {
@@ -418,7 +431,8 @@ static int json_parse_object(const char **buf, const char *buf_end, uint8_t **re
 static int json_parse_value(const char **buf, const char *buf_end, uint8_t **restrict dst,
                             const uint8_t *dst_end) {
     for (; *buf < buf_end; (*buf)++) {
-        if(is_whitespace(**buf)) continue;
+        if (is_whitespace(**buf))
+            continue;
 
         switch (**buf) {
         case '"':
@@ -453,82 +467,76 @@ static int json_parse_value(const char **buf, const char *buf_end, uint8_t **res
     return 0;
 }
 
-int json_parse(const char * src, size_t src_len, uint8_t * dst, size_t dst_len) {
+int json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len) {
     memset(dst, 0, dst_len);
-    const char * buf = src;
-    const char * buf_end = src + src_len;
-    uint8_t * dst_end = dst + dst_len;
-    int rc = json_parse_value(&buf, buf_end, &dst, dst_end);
-    jerr_index = buf - src;
+    const char *buf     = src;
+    const char *buf_end = src + src_len;
+    uint8_t    *dst_end = dst + dst_len;
+    int         rc      = json_parse_value(&buf, buf_end, &dst, dst_end);
+    jerr_index          = buf - src;
     return rc;
 }
 
-void json_print_value(uint8_t ** buf) {
-    JSONHeader * header = (JSONHeader*) *buf;
+void json_print_value(uint8_t **buf) {
+    JSONHeader *header = (JSONHeader *)*buf;
     *buf += sizeof(header);
-    switch(header->type) {
-        case String:
-            printf("\"%.*s\"", header->len, *buf);
-            *buf += align_8(header->len);
-            break;
-        case Number:
-            printf("%lf", *(double *)*buf);
-            *buf += sizeof(double);
-            break;
-        case Boolean: 
-            {
-                uint64_t value = *(uint64_t*)*buf;
-                if(value == 1) {
-                    printf("true");
-                } else if(value == 0) {
-                    printf("false");
-                } else {
-                    printf("(boolean) garbage");
-                }
-                *buf += 8;
+    switch (header->type) {
+    case String:
+        printf("\"%.*s\"", header->len, *buf);
+        *buf += align_8(header->len);
+        break;
+    case Number:
+        printf("%lf", *(double *)*buf);
+        *buf += sizeof(double);
+        break;
+    case Boolean: {
+        uint64_t value = *(uint64_t *)*buf;
+        if (value == 1) {
+            printf("true");
+        } else if (value == 0) {
+            printf("false");
+        } else {
+            printf("(boolean) garbage");
+        }
+        *buf += 8;
+    } break;
+    case Null:
+        printf("null");
+        break;
+    case Array: {
+        uint8_t *end = *buf + header->len;
+        printf("[");
+        while (1) {
+            json_print_value(buf);
+            if (*buf < end) {
+                printf(", ");
+            } else {
+                printf("]");
+                break;
             }
-            break;
-        case Null:
-            printf("null");
-            break;
-        case Array:
-            {
-                uint8_t * end = *buf + header->len;
-                printf("[");
-                while(1) {
-                    json_print_value(buf);
-                    if(*buf < end) {
-                        printf(", ");
-                    } else {
-                        printf("]");
-                        break;
-                    }
-                }
+        }
+    } break;
+    case Object: {
+        uint8_t *end = *buf + header->len;
+        printf("{");
+        while (1) {
+            json_print_value(buf);
+            printf(":");
+            json_print_value(buf);
+            if (*buf < end) {
+                printf(",");
+            } else {
+                printf("}");
+                break;
             }
-            break;
-        case Object:
-            {
-                uint8_t * end = *buf + header->len;
-                printf("{");
-                while(1) {
-                    json_print_value(buf);
-                    printf(":");
-                    json_print_value(buf);
-                    if(*buf < end) {
-                        printf(",");
-                    } else {
-                        printf("}");
-                        break;
-                    }
-                }
-            }
-            break;
+        }
+    } break;
     }
 }
 
 struct Test {
     double a;
-    char * b;
+    char  *b;
 };
 
 const JSONAdapter TestAdapter[] = {
@@ -536,79 +544,74 @@ const JSONAdapter TestAdapter[] = {
     {".b", String, offsetof(struct Test, b)},
 };
 
-static void json_adapt_set(uint8_t * buf, JSONAdapter * adapters, size_t adapter_count, void * ptr, char * path) {
-    JSONHeader * header = (JSONHeader *)buf;
-    for(int i = 0; i < adapter_count; i++) {
-        if(strcmp(path, adapters[i].path) == 0 && header->type == adapters[i].type) {
-            void * p = ptr + adapters[i].offset;
-            switch(header->type) {
-                case String:
-                    {
-                        char * v = malloc(header->len + 1);
-                        strncpy(v, (char *)(buf + sizeof(JSONHeader)), header->len);
-                        v[header->len] = '\0';
-                        *(char**)p = v;
-                    }
-                    break;
-                case Number:
-                    *(double*)p = *(double*)(buf + sizeof(JSONHeader));
-                    break;
-                case Boolean:
-                    *(bool*)p = *(uint64_t*)(buf + sizeof(JSONHeader)) == 1;
-                    break;
+static void json_adapt_set(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr, char *path) {
+    JSONHeader *header = (JSONHeader *)buf;
+    for (int i = 0; i < adapter_count; i++) {
+        if (strcmp(path, adapters[i].path) == 0 && header->type == adapters[i].type) {
+            void *p = ptr + adapters[i].offset;
+            switch (header->type) {
+            case String: {
+                char *v = malloc(header->len + 1);
+                strncpy(v, (char *)(buf + sizeof(JSONHeader)), header->len);
+                v[header->len] = '\0';
+                *(char **)p    = v;
+            } break;
+            case Number:
+                *(double *)p = *(double *)(buf + sizeof(JSONHeader));
+                break;
+            case Boolean:
+                *(bool *)p = *(uint64_t *)(buf + sizeof(JSONHeader)) == 1;
+                break;
             }
         }
     }
 }
 
-static void json_adapt_priv(uint8_t ** buf, JSONAdapter * adapters, size_t adapter_count, void * ptr, char * full_path, char * path) {
-    JSONHeader * header = (JSONHeader *)*buf;
+static void json_adapt_priv(uint8_t **buf, JSONAdapter *adapters, size_t adapter_count, void *ptr,
+                            char *full_path, char *path) {
+    JSONHeader *header = (JSONHeader *)*buf;
 
-    switch(header->type) {
-        case String:
-            json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
-            *buf += sizeof(JSONHeader) + align_8(header->len);
-            break;
-        case Number:
-            json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
-            *buf += sizeof(JSONHeader) + sizeof(double);
-            break;
-        case Boolean:
-            json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
-            *buf += sizeof(JSONHeader) + 8;
-            break;
-        case Null:
+    switch (header->type) {
+    case String:
+        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
+        *buf += sizeof(JSONHeader) + align_8(header->len);
+        break;
+    case Number:
+        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
+        *buf += sizeof(JSONHeader) + sizeof(double);
+        break;
+    case Boolean:
+        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
+        *buf += sizeof(JSONHeader) + 8;
+        break;
+    case Null:
+        *buf += sizeof(JSONHeader);
+        break;
+    case Array: {
+        *buf += sizeof(JSONHeader);
+        uint8_t *end = *buf + header->len;
+        for (size_t index = 0; *buf < end; index++) {
+            int len = sprintf(path, ".%lu", index);
+            json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
+        }
+    } break;
+    case Object: {
+        *buf += sizeof(JSONHeader);
+        uint8_t *end = *buf + header->len;
+        while (*buf < end) {
+            JSONHeader *key_header = (JSONHeader *)*buf;
             *buf += sizeof(JSONHeader);
-            break;
-        case Array:
-            {
-                *buf += sizeof(JSONHeader);
-                uint8_t * end = *buf + header->len;
-                for(size_t index = 0; *buf < end; index++) {
-                    int len = sprintf(path, ".%lu", index);
-                    json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
-                }
-            }
-            break;
-        case Object:
-            {
-                *buf += sizeof(JSONHeader);
-                uint8_t * end = *buf + header->len;
-                while(*buf < end) {
-                    JSONHeader * key_header = (JSONHeader*)*buf;
-                    *buf += sizeof(JSONHeader);
 
-                    int len = sprintf(path, ".%.*s", key_header->len, *buf);
-                    *buf += align_8(key_header->len);
+            int len = sprintf(path, ".%.*s", key_header->len, *buf);
+            *buf += align_8(key_header->len);
 
-                    json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
-                }
-            }
-            break;
+            json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
+        }
+    } break;
     }
 }
 
-void json_adapt(uint8_t * buf, JSONAdapter * adapters, size_t adapter_count, void * ptr) {
+void json_adapt(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr) {
     char path[512] = ".";
     json_adapt_priv(&buf, adapters, adapter_count, ptr, path, path);
 }

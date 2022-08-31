@@ -4,6 +4,7 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <linux/input-event-codes.h>
 #include <linux/input.h>
 #include <pthread.h>
 #include <stdbool.h>

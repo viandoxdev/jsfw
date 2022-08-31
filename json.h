@@ -1,10 +1,9 @@
 // vi:ft=c
 #ifndef JSON_H_
 #define JSON_H_
-#include <stdint.h>
 #include <limits.h>
-#include <unistd.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct __attribute__((packed, aligned(8))) {
     uint32_t type;
@@ -39,7 +38,7 @@ typedef enum {
 } JSONError;
 
 #ifdef JSON_C_
-static const char * JSONErrorMessage[JERRORNO_MAX + 1] = {
+static const char *JSONErrorMessage[JERRORNO_MAX + 1] = {
     "No error",
     "Destination buffer is not big enough",
     "Source buffer overflowed before parsing finished",
@@ -50,19 +49,19 @@ static const char * JSONErrorMessage[JERRORNO_MAX + 1] = {
     "Illegal escape in string",
     "Unexpected character in number",
     "Unexpected character in object",
-    "?"
+    "?",
 };
 #endif
 
 typedef struct {
-    char * path;
+    char    *path;
     JSONType type;
-    size_t offset;
+    size_t   offset;
 } JSONAdapter;
 
-void json_adapt(uint8_t * buf, JSONAdapter * adapters, size_t adapter_count, void * ptr);
-int json_parse(const char * src, size_t src_len, uint8_t * dst, size_t dst_len);
-const char * json_strerr();
-size_t json_err_loc();
+void        json_adapt(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr);
+int         json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len);
+const char *json_strerr();
+size_t      json_err_loc();
 
 #endif

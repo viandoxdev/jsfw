@@ -3,7 +3,7 @@
 #define HID_H_
 #include "net.h"
 
-#include <linux/input.h>
+#include <linux/input-event-codes.h>
 #include <stdint.h>
 
 typedef uint64_t uniq_t;

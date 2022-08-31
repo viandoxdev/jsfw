@@ -6,12 +6,14 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <linux/input-event-codes.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <math.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

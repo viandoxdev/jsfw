@@ -13,7 +13,7 @@ Message msg_device_info() {
 
 // Deserialize the message in buf, buf must be at least 4 aligned. Returns -1 on error, otherwise returns 0
 // and writes result to dst
-int msg_deserialize(const uint8_t *buf, size_t len, Message * restrict dst) {
+int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
     // Decrement len so that it becomes the len of the data without the code.
     if (len-- < 1)
         return -1;
@@ -118,7 +118,7 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message * restrict dst) {
 }
 
 // Serialize the message msg in buf, buf must be at least 4 aligned. Returns -1 on error (buf not big enough);
-int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg) {
+int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
     // If len is 0 we can't serialize any message
     if (len-- == 0)
         return -1;
@@ -134,9 +134,9 @@ int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg) {
             return -1;
 
         // We begin 4 aligned
-        buf[0]   = (uint8_t)msg->code;
+        buf[0] = (uint8_t)msg->code;
         // buf + 2: a byte for code and a byte for padding
-        buf16    = (uint16_t *)(buf + 2);
+        buf16 = (uint16_t *)(buf + 2);
         // 2 aligned here
         buf16[0] = abs;
         buf16[1] = rel;
@@ -177,7 +177,7 @@ int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg) {
         if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
 
-        buf[0]   = (uint8_t)msg->code;
+        buf[0] = (uint8_t)msg->code;
         // buf + 2: a byte for code and a byte for padding
         buf16    = (uint16_t *)(buf + 2);
         buf16[0] = abs;

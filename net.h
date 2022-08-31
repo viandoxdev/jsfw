@@ -1,7 +1,7 @@
 // vi:ft=c
 #ifndef NET_H_
 #define NET_H_
-#include <linux/input.h>
+#include <linux/input-event-codes.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -71,7 +71,7 @@ typedef union {
     MessageControllerState controller_state;
 } Message;
 
-int msg_deserialize(const uint8_t *buf, size_t len, Message * restrict dst);
-int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg);
+int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst);
+int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg);
 
 #endif
