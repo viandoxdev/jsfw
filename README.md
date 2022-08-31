@@ -22,7 +22,7 @@ The code can theoretically support any kind of device (mouse, keyboard, joystick
 
 The format for the controller state takes this form (comments not allowed):
 
-```json
+```jsonc
 {
     "led_color": "#ff0000", // hex color string
     "flash": [0.04, 0.11], // values are 0-1, first is time on second is time off
