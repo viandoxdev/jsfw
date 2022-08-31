@@ -23,12 +23,16 @@ Vec vec_cap(size_t data_size, size_t initial_capacity) {
 }
 
 static inline void vec_grow(Vec *v, size_t cap) {
-    if (v->cap >= cap)
+    if (v->cap >= cap) {
         return;
+    }
+
     size_t new_cap  = cap > v->cap * 2 ? cap : v->cap * 2;
     void  *new_data = realloc(v->data, new_cap * v->stride);
-    if (new_data == NULL)
+    if (new_data == NULL) {
         handle_alloc_error();
+    }
+
     v->data = new_data;
     v->cap  = new_cap;
 }
@@ -43,14 +47,16 @@ void vec_pop(Vec *v, void *data) {
         printf("ERR(vec_pop): Trying to pop an element from an empty vector\n");
         return;
     }
-    if (data != NULL)
+    if (data != NULL) {
         memcpy(data, v->data + v->stride * (v->len - 1), v->stride);
+    }
     v->len--;
 }
 
 void *vec_get(Vec *v, size_t index) {
-    if (index >= v->len)
+    if (index >= v->len) {
         return NULL;
+    }
     return v->data + index * v->stride;
 }
 
@@ -80,17 +86,20 @@ void vec_remove(Vec *v, size_t index, void *data) {
     }
 
     void *slot = v->data + index * v->stride;
-    if (data != NULL)
+    if (data != NULL) {
         memcpy(data, slot, v->stride);
-    if (index < --v->len)
+    }
+    if (index < --v->len) {
         memmove(slot, slot + v->stride, (v->len - index) * v->stride);
+    }
 }
 
 void vec_clear(Vec *v) { v->len = 0; }
 
 void vec_extend(Vec *v, void *data, size_t len) {
-    if (len == 0)
+    if (len == 0) {
         return;
+    }
     vec_grow(v, v->len + len);
     memcpy(v->data + v->stride * v->len, data, v->stride * len);
     v->len += len;

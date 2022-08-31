@@ -1,5 +1,3 @@
-#include "main.h"
-
 #include "client.h"
 #include "hid.h"
 #include "server.h"
@@ -8,7 +6,6 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 const char *USAGE[] = {
@@ -16,18 +13,12 @@ const char *USAGE[] = {
     "jsfw server [port]\n",
 };
 
-uint16_t parse_port(const char *str) {
-    long long n = atoll(str);
-    if (n <= 0 || n > UINT16_MAX)
-        panicf("Invalid port: Expected a number in the range 1..%d, got '%s'\n", UINT16_MAX, str);
-    return n;
-}
-
 void server(uint16_t port) {
-    printf("[Server (port: %u)]\n\n", port);
+    printf("[Server (0.0.0.0:%u)]\n\n", port);
 
     pthread_t thread;
     pthread_create(&thread, NULL, hid_thread, NULL);
+
     server_run(port);
 }
 

@@ -53,6 +53,7 @@ static const char *JSONErrorMessage[JERRORNO_MAX + 1] = {
 };
 #endif
 
+// See client.c for usage of adapters
 typedef struct {
     char    *path;
     JSONType type;
@@ -61,7 +62,9 @@ typedef struct {
 
 void        json_adapt(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr);
 int         json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len);
+void        json_print_value(uint8_t *buf);
 const char *json_strerr();
-size_t      json_err_loc();
+size_t      json_errloc();
+JSONError   json_errno();
 
 #endif

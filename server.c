@@ -1,3 +1,4 @@
+#include "const.h"
 #include "hid.h"
 #include "net.h"
 #include "util.h"
@@ -8,7 +9,6 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// Arguments for a connecion thread
 struct Connection {
     int      socket;
     uint32_t id;
@@ -26,22 +27,18 @@ void *server_handle_conn(void *args_) {
 
     printf("CONN(%u): start\n", args->id);
 
-    int enable        = true;
-    int idle_time     = 10;
-    int keep_count    = 5;
-    int keep_interval = 2;
-
-    if (setsockopt(args->socket, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) != 0)
+    if (setsockopt(args->socket, SOL_SOCKET, SO_KEEPALIVE, &TCP_KEEPALIVE_ENABLE, sizeof(int)) != 0)
         printf("ERR(server_handle_conn): Enabling socket keepalives on client\n");
-    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPIDLE, &idle_time, sizeof(idle_time)) != 0)
-        printf("ERR(server_handle_conn): Setting initial ERR()-time value\n");
-    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPCNT, &keep_count, sizeof(keep_count)) != 0)
+    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPIDLE, &TCP_KEEPALIVE_IDLE_TIME, sizeof(int)) != 0)
+        printf("ERR(server_handle_conn): Setting initial idle-time value\n");
+    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPCNT, &TCP_KEEPALIVE_RETRY_COUNT, sizeof(int)) != 0)
         printf("ERR(server_handle_conn): Setting idle retry count\n");
-    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPINTVL, &keep_interval, sizeof(keep_interval)) != 0)
+    if (setsockopt(args->socket, SOL_TCP, TCP_KEEPINTVL, &TCP_KEEPALIVE_RETRY_INTERVAL, sizeof(int)) != 0)
         printf("ERR(server_handle_conn): Setting idle retry interval\n");
 
-    uint8_t        buf[2048] __attribute__((aligned(4))) = {};
-    PhysicalDevice dev                                   = get_device();
+    uint8_t buf[2048] __attribute__((aligned(4))) = {};
+
+    PhysicalDevice dev = get_device();
     printf("CONN(%u): got device '%s'\n", args->id, dev.name);
 
     char *closing_message = "";
@@ -182,19 +179,22 @@ void server_run(uint16_t port) {
     printf("SERVER:  start\n");
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0)
+    if (sock < 0) {
         panicf("Couldn't open socket\n");
+    }
 
     struct sockaddr_in addr = {};
     addr.sin_family         = AF_INET;
     addr.sin_addr.s_addr    = htonl(INADDR_ANY);
     addr.sin_port           = htons(port);
 
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         panicf("Couldn't bind to the socket\n");
+    }
 
-    if (listen(sock, 16) != 0)
+    if (listen(sock, 16) != 0) {
         panicf("Couldn't listen on socket\n");
+    }
 
     uint32_t ids = 0;
     while (1) {

@@ -1,6 +1,6 @@
 # jsfw
 
-Linux only utility to forward uevent devices over network through a tcp connection.
+Utility to forward uevent devices over network through a tcp connection.
 
 # Usage
 
@@ -18,7 +18,7 @@ jsfw server [port]
 
 When a device is connected to the server host, jsfw will notice it and assign it to one of the client which will in turn create a virtual device based on it.
 
-The code can theoretically support any kind of device (mouse, keyboard, joystick...) but is artificially limited to PS4 controllers (see `hid.c::filter_event`), because the hidraw interface used to set additional device state (led color, flashing, rumble) only works with them. This could be easily edited tho (see `hid.c::apply_controller_state`, `net.h::MessageControllerState`, `net.c::{msg_serialize, msg_deserialize}` and `client.c::JControllerState`). To set the controller state from the client write the json state to the fifo (either `/tmp/jsfw_fifo` or `/run/jsfw_fifo` depending on if `JSFW_DEV` was set during compilation, see `Makefile`).
+The code can theoretically support any kind of device (mouse, keyboard, joystick...) but is artificially limited to PS4 controllers (see `hid.c::filter_event`), because the hidraw interface used to set additional device state (led color, flashing, rumble) only works with them. This could be easily edited tho (see `hid.c::apply_controller_state`, `net.h::MessageControllerState`, `net.c::{msg_serialize, msg_deserialize}` and `client.c::JControllerState`). To set the controller state from the client write the json state to the fifo (by default `/tmp/jsfw_fifo`).
 
 The format for the controller state takes this form (comments not allowed):
 
@@ -31,6 +31,8 @@ The format for the controller state takes this form (comments not allowed):
 ```
 
 Any value can be ommitted, extra values will be ignored.
+
+Some aspect are easily configurable through `const.c`.
 
 # Building
 

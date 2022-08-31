@@ -2,15 +2,6 @@
 
 #include <stdio.h>
 
-Message msg_device_info() {
-    MessageDeviceInfo m;
-    m.code = DeviceInfo;
-
-    Message s;
-    s.device_info = m;
-    return s;
-}
-
 // Deserialize the message in buf, buf must be at least 4 aligned. Returns -1 on error, otherwise returns 0
 // and writes result to dst
 int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
