@@ -11,7 +11,9 @@ Message msg_device_info() {
     return s;
 }
 
-int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
+// Deserialize the message in buf, buf must be at least 4 aligned. Returns -1 on error, otherwise returns 0
+// and writes result to dst
+int msg_deserialize(const uint8_t *buf, size_t len, Message * restrict dst) {
     // Decrement len so that it becomes the len of the data without the code.
     if (len-- < 1)
         return -1;
@@ -23,13 +25,14 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
 
     switch (code) {
     case DeviceInfo:
-        if (len < 6)
+        if (len < 7)
             return -1;
-        buf16 = (uint16_t *)(buf + 1);
+        // buf + 2: a byte for code and a byte for padding
+        buf16 = (uint16_t *)(buf + 2);
         abs   = buf16[0];
         rel   = buf16[1];
         key   = buf16[2];
-        buf += 7;
+        buf += 8;
         if (MSS_DEVICE_INFO(abs, rel, key) > len)
             return -1;
 
@@ -40,7 +43,8 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
 
         // SOA in c but serialized as AOS
         for (int i = 0; i < abs; i++) {
-            uint32_t *buf32 = (uint32_t *)(buf + 2);
+            // buf + 4: 2 bytes for id and 2 bytes of padding
+            uint32_t *buf32 = (uint32_t *)(buf + 4);
 
             dst->device_info.abs_id[i]   = *(uint16_t *)buf;
             dst->device_info.abs_min[i]  = buf32[0];
@@ -49,7 +53,7 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
             dst->device_info.abs_flat[i] = buf32[3];
             dst->device_info.abs_res[i]  = buf32[4];
 
-            buf += 22;
+            buf += 24;
         }
 
         for (int i = 0; i < rel; i++) {
@@ -64,14 +68,15 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
 
         return 0;
     case DeviceReport:
-        if (len < 6)
+        if (len < 7)
             return -1;
 
-        buf16 = (uint16_t *)(buf + 1);
+        // buf + 2: a byte for code and a byte of padding
+        buf16 = (uint16_t *)(buf + 2);
         abs   = buf16[0];
         rel   = buf16[1];
         key   = buf16[2];
-        buf += 7;
+        buf += 8;
         if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
 
@@ -112,7 +117,8 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *dst) {
     }
 }
 
-int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
+// Serialize the message msg in buf, buf must be at least 4 aligned. Returns -1 on error (buf not big enough);
+int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg) {
     // If len is 0 we can't serialize any message
     if (len-- == 0)
         return -1;
@@ -127,15 +133,20 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
         if (len < MSS_DEVICE_INFO(abs, rel, key))
             return -1;
 
+        // We begin 4 aligned
         buf[0]   = (uint8_t)msg->code;
-        buf16    = (uint16_t *)(buf + 1);
+        // buf + 2: a byte for code and a byte for padding
+        buf16    = (uint16_t *)(buf + 2);
+        // 2 aligned here
         buf16[0] = abs;
         buf16[1] = rel;
         buf16[2] = key;
-        buf += 7;
+        buf += 8;
 
+        // Back to 4 aligned
         for (int i = 0; i < abs; i++) {
-            uint32_t *buf32 = (uint32_t *)(buf + 2);
+            // buf + 4: 2 bytes for id and 2 bytes of padding
+            uint32_t *buf32 = (uint32_t *)(buf + 4);
 
             *(uint16_t *)buf = msg->device_info.abs_id[i];
 
@@ -145,9 +156,9 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
             buf32[3] = msg->device_info.abs_flat[i];
             buf32[4] = msg->device_info.abs_res[i];
 
-            buf += 22;
+            buf += 24;
         }
-
+        // Still 4 aligned
         for (int i = 0; i < rel; i++) {
             *(uint16_t *)buf = msg->device_info.rel_id[i];
             buf += 2;
@@ -167,22 +178,23 @@ int msg_serialize(uint8_t *buf, size_t len, Message *msg) {
             return -1;
 
         buf[0]   = (uint8_t)msg->code;
-        buf16    = (uint16_t *)(buf + 1);
+        // buf + 2: a byte for code and a byte for padding
+        buf16    = (uint16_t *)(buf + 2);
         buf16[0] = abs;
         buf16[1] = rel;
         buf16[2] = key;
-        buf += 7;
-
+        buf += 8;
+        // We're 4 aligned already
         for (int i = 0; i < abs; i++) {
             *(uint32_t *)buf = msg->device_report.abs[i];
             buf += 4;
         }
-
+        // Still 4 aligned
         for (int i = 0; i < rel; i++) {
             *(uint32_t *)buf = msg->device_report.rel[i];
             buf += 4;
         }
-
+        // Doesn't matter since we're writing individual bytes
         for (int i = 0; i < key; i++)
             *(buf++) = msg->device_report.key[i];
 

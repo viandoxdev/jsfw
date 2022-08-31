@@ -1,6 +1,6 @@
 // vi:ft=c
-#ifndef NET_H
-#define NET_H
+#ifndef NET_H_
+#define NET_H_
 #include <linux/input.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -12,14 +12,17 @@ typedef enum {
     ControllerState = 4,
 } MessageCode;
 
+// Alignment 4
 typedef struct {
     MessageCode code;
+    // + 1 byte of padding
 
     uint16_t abs_count;
     uint16_t rel_count;
     uint16_t key_count;
 
     uint16_t abs_id[ABS_CNT];
+    // + 2 bytes of padding per abs
     uint32_t abs_min[ABS_CNT];
     uint32_t abs_max[ABS_CNT];
     uint32_t abs_fuzz[ABS_CNT];
@@ -30,12 +33,14 @@ typedef struct {
 
     uint16_t key_id[KEY_CNT];
 } MessageDeviceInfo;
-#define MSS_DEVICE_INFO(abs, rel, key) (6 + abs * 22 + rel * 2 + key * 2)
+#define MSS_DEVICE_INFO(abs, rel, key) (8 + abs * 24 + rel * 2 + key * 2 + 1)
 // MSS -> Message Serialized Size:
 // Size of the data of the message when serialized (no alignment / padding)
 
+// 4 aligned
 typedef struct {
     MessageCode code;
+    // + 1 byte of padding
 
     uint16_t abs_count;
     uint16_t rel_count;
@@ -45,8 +50,9 @@ typedef struct {
     uint32_t rel[REL_CNT];
     uint8_t  key[KEY_CNT];
 } MessageDeviceReport;
-#define MSS_DEVICE_REPORT(abs, rel, key) (6 + abs * 4 + rel * 4 + key * 1)
+#define MSS_DEVICE_REPORT(abs, rel, key) (6 + abs * 4 + rel * 4 + key * 1 + 1)
 
+// 1 aligned
 typedef struct {
     MessageCode code;
 
@@ -65,11 +71,7 @@ typedef union {
     MessageControllerState controller_state;
 } Message;
 
-// Read a message from a buffer with a length, message goes into dst, returns -1 if a messsage couldn't be
-// read
-int msg_deserialize(const uint8_t *buf, size_t len, Message *dst);
-// Write a message to a buffer with a length, return -1 if the message couldn't be written (buffer not big
-// enough). Returns the length of the serialized message if succeeded.
-int msg_serialize(uint8_t *buf, size_t len, Message *msg);
+int msg_deserialize(const uint8_t *buf, size_t len, Message * restrict dst);
+int msg_serialize(uint8_t * restrict buf, size_t len, const Message *msg);
 
 #endif

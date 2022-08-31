@@ -39,12 +39,24 @@ void *server_handle_conn(void *args_) {
     if (setsockopt(args->socket, SOL_TCP, TCP_KEEPINTVL, &keep_interval, sizeof(keep_interval)) != 0)
         printf("ERR(server_handle_conn): Setting idle retry interval\n");
 
-    uint8_t        buf[2048];
+    uint8_t        buf[2048] __attribute__((aligned(4))) = {};
     PhysicalDevice dev = get_device();
     printf("CONN(%u): got device '%s'\n", args->id, dev.name);
 
+    char *closing_message = "";
+
     int len = msg_serialize(buf, 2048, (Message *)&dev.device_info);
-    write(args->socket, buf, len);
+    if(len > 0) {
+        if(write(args->socket, buf, len) == -1) {
+            perror("SERVER: Couldn't send device info, ");
+            closing_message = "Socket error";
+            goto conn_end;
+        }
+    } else {
+        perror("SERVER:  Couldn't serialize device info, ");
+        closing_message = "Device info error";
+        goto conn_end;
+    }
 
     struct pollfd  pfds[2]     = {};
     struct pollfd *socket_poll = &pfds[0];
@@ -61,8 +73,6 @@ void *server_handle_conn(void *args_) {
     report.abs_count = dev.device_info.abs_count;
     report.rel_count = dev.device_info.rel_count;
     report.key_count = dev.device_info.key_count;
-
-    char *closing_message = "";
 
     while (1) {
         int rc = poll(pfds, 2, -1);

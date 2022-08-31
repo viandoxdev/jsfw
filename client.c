@@ -1,5 +1,6 @@
 #include "client.h"
 
+#include "json.h"
 #include "net.h"
 #include "util.h"
 
@@ -7,6 +8,7 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <math.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
@@ -14,11 +16,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/ioctl.h>
 
 typedef struct {
     int               fd;
@@ -55,6 +57,22 @@ static VirtualDevice device = {};
 
 static inline bool device_exists() { return device.fd > 0; }
 
+typedef struct {
+    char  *led_color;
+    double rumble_small;
+    double rumble_big;
+    double flash_on;
+    double flash_off;
+} JControllerState;
+
+static const JSONAdapter JControllerStateAdapter[] = {
+    {".led_color", String, offsetof(JControllerState, led_color)},
+    {".rumble.0", Number, offsetof(JControllerState, rumble_small)},
+    {".rumble.1", Number, offsetof(JControllerState, rumble_big)},
+    {".flash.0", Number, offsetof(JControllerState, flash_on)},
+    {".flash.1", Number, offsetof(JControllerState, flash_off)},
+};
+
 void device_destroy() {
     if (!device_exists()) {
         return;
@@ -79,14 +97,14 @@ void device_init(MessageDeviceInfo *dev) {
     if (dev->abs_count > 0) {
         ioctl(fd, UI_SET_EVBIT, EV_ABS);
         for (int i = 0; i < dev->abs_count; i++) {
-            struct uinput_abs_setup setup;
-            setup.code               = dev->abs_id[i];
-            setup.absinfo.minimum    = dev->abs_min[i];
-            setup.absinfo.maximum    = dev->abs_max[i];
-            setup.absinfo.fuzz       = dev->abs_fuzz[i];
-            setup.absinfo.flat       = dev->abs_flat[i];
-            setup.absinfo.resolution = dev->abs_res[i];
-            setup.absinfo.value      = 0;
+            struct uinput_abs_setup setup = {};
+            setup.code                    = dev->abs_id[i];
+            setup.absinfo.minimum         = dev->abs_min[i];
+            setup.absinfo.maximum         = dev->abs_max[i];
+            setup.absinfo.fuzz            = dev->abs_fuzz[i];
+            setup.absinfo.flat            = dev->abs_flat[i];
+            setup.absinfo.resolution      = dev->abs_res[i];
+            setup.absinfo.value           = 0;
             ioctl(fd, UI_ABS_SETUP, &setup);
         }
     }
@@ -240,6 +258,17 @@ void early_checks() {
     close(fd);
 }
 
+static uint8_t parse_hex_digit(char h) {
+    if (h >= '0' && h <= '9')
+        return h - '0';
+    else if (h >= 'a' && h <= 'f')
+        return h - 'a' + 10;
+    else if (h >= 'A' && h <= 'F')
+        return h - 'A' + 10;
+    else
+        return 0;
+}
+
 void client_run(char *address, uint16_t port) {
     // Device doesn't exist yet
     device.fd = -1;
@@ -248,7 +277,8 @@ void client_run(char *address, uint16_t port) {
     setup_fifo();
     setup_server(address, port);
 
-    uint8_t buf[2049];
+    uint8_t buf[2048] __attribute__((aligned(4)));
+    uint8_t json_buf[2048] __attribute__((aligned(8)));
     while (1) {
         int rc = poll(poll_fds, 2, -1);
         if (rc < 0) {
@@ -256,21 +286,64 @@ void client_run(char *address, uint16_t port) {
             exit(1);
         }
 
-        if (fifo_poll->revents & POLLHUP || fifo_poll->revents & POLLERR) {
-            // Reopen fifo
-            open_fifo();
-        } else if (fifo_poll->revents & POLLIN) {
+        if (fifo_poll->revents & POLLIN || fifo_poll->revents & POLLHUP || fifo_poll->revents & POLLERR) {
             int len = read(fifo, buf, 2048);
             if (len <= 0) {
-                // This shouldn't ever happen as the poll already checks for the kind of error that would
-                // cause len to be <= 0
-                printf("CLIENT: supposedly unreachable code reached\n");
                 open_fifo();
             } else {
                 // We've got data from the fifo
-                // TODO: parse and handle that
-                buf[len] = '\0';
-                printf("CLIENT: Got fifo message:\n%s\n", buf);
+                int rc = json_parse((char *)buf, len, json_buf, 2048);
+                if (rc < 0) {
+                    printf("CLIENT: Error when parsing fifo message as json (%s at index %lu)\n",
+                           json_strerr(), json_err_loc());
+                } else {
+                    JControllerState state;
+                    // default values
+                    state.flash_off    = 0.0;
+                    state.flash_on     = 0.0;
+                    state.led_color    = NULL;
+                    state.rumble_small = 0.0;
+                    state.rumble_big   = 0.0;
+                    json_adapt(json_buf, (JSONAdapter *)JControllerStateAdapter,
+                               sizeof(JControllerStateAdapter) / sizeof(JSONAdapter), &state);
+                    MessageControllerState msg;
+                    msg.code         = ControllerState;
+                    msg.small_rumble = (uint8_t)(fmax(fmin(1.0, state.rumble_small), 0.0) * 255.0);
+                    msg.big_rumble   = (uint8_t)(fmax(fmin(1.0, state.rumble_big), 0.0) * 255.0);
+                    msg.flash_on     = (uint8_t)(fmax(fmin(1.0, state.flash_on), 0.0) * 255.0);
+                    msg.flash_off    = (uint8_t)(fmax(fmin(1.0, state.flash_off), 0.0) * 255.0);
+
+                    if (state.led_color == NULL || strnlen(state.led_color, 8) != 7) {
+                        msg.led[0] = 0;
+                        msg.led[1] = 0;
+                        msg.led[2] = 0;
+                    } else {
+                        char *s    = state.led_color;
+                        msg.led[0] = parse_hex_digit(s[1]);
+                        msg.led[0] <<= 4;
+                        msg.led[0] += parse_hex_digit(s[2]);
+
+                        msg.led[1] = parse_hex_digit(s[3]);
+                        msg.led[1] <<= 4;
+                        msg.led[1] += parse_hex_digit(s[4]);
+
+                        msg.led[2] = parse_hex_digit(s[5]);
+                        msg.led[2] <<= 4;
+                        msg.led[2] += parse_hex_digit(s[6]);
+
+                        free(state.led_color);
+                    }
+
+                    int len = msg_serialize(buf, 2048, (Message *)&msg);
+                    if (len > 0) {
+                        if (send(sock, buf, len, 0) > 0) {
+                            printf("CLIENT: Sent controller state: #%02x%02x%02x flash: (%d, %d) rumble: "
+                                   "(%d, %d)\n",
+                                   msg.led[0], msg.led[1], msg.led[2], msg.flash_on, msg.flash_off,
+                                   msg.small_rumble, msg.big_rumble);
+                        };
+                    };
+                }
             }
         }
 

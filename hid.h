@@ -1,6 +1,6 @@
 // vi:ft=c
-#ifndef HID_H
-#define HID_H
+#ifndef HID_H_
+#define HID_H_
 #include "net.h"
 
 #include <linux/input.h>

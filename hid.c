@@ -64,11 +64,12 @@ void setup_device(PhysicalDevice *dev) {
     for (int i = 0; i < KEY_CNT; i++)
         dev->mapping.key_indices[i] = -1;
 
-    uint8_t bits[EV_MAX]       = {};
-    uint8_t feat_bits[KEY_MAX] = {};
+    uint8_t bits[EV_MAX]                 = {};
+    uint8_t feat_bits[(KEY_MAX + 7) / 8] = {};
     ioctl(dev->event, EVIOCGBIT(0, EV_MAX), bits);
     for (int i = 0; i < EV_MAX; i++) {
         if (bit_set(bits, i)) {
+            memset(feat_bits, 0, sizeof(feat_bits));
             ioctl(dev->event, EVIOCGBIT(i, KEY_MAX), feat_bits);
             for (int j = 0; j < KEY_MAX; j++) {
                 if (bit_set(feat_bits, j)) {
@@ -236,10 +237,10 @@ void poll_devices() {
         char hidraw_path[64];
 
         {
-            char hidraw_path[256];
-            snprintf(hidraw_path, 256, "/sys/class/input/%s/device/device/hidraw", input->d_name);
+            char hidraw_dir_path[256];
+            snprintf(hidraw_dir_path, 256, "/sys/class/input/%s/device/device/hidraw", input->d_name);
 
-            DIR           *hidraw_dir = opendir(hidraw_path);
+            DIR           *hidraw_dir = opendir(hidraw_dir_path);
             struct dirent *hidraw     = NULL;
             while ((hidraw = readdir(hidraw_dir)) != NULL) {
                 if (strncmp(hidraw->d_name, "hidraw", 6) == 0)
@@ -293,6 +294,9 @@ void poll_devices() {
 }
 
 void apply_controller_state(PhysicalDevice *dev, MessageControllerState *state) {
+    printf("HID:     Controller state: #%02x%02x%02x (%d, %d) rumble: (%d, %d)\n", state->led[0],
+           state->led[1], state->led[2], state->flash_on, state->flash_off, state->small_rumble,
+           state->big_rumble);
     uint8_t buf[32] = {0x05, 0xff, 0x00, 0x00};
 
     buf[4]  = state->small_rumble;

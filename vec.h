@@ -1,6 +1,6 @@
 // vi:ft=c
-#ifndef VEC_H
-#define VEC_H
+#ifndef VEC_H_
+#define VEC_H_
 #include <unistd.h>
 
 #define vec_of(type) vec_new(sizeof(type))
