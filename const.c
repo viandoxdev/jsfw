@@ -11,7 +11,7 @@ const char *DEVICE_DEFAULT_NAME = "Unnamed Device";
 const char *FIFO_PATH = "/tmp/jsfw_fifo";
 // Delay (in seconds) between each connection retry for the client
 const uint32_t CONNECTION_RETRY_DELAY = 5;
-// Displayed bendor for the virtual device
+// Displayed vendor for the virtual device
 const uint16_t VIRTUAL_DEVICE_VENDOR = 0x6969;
 // Displayed product for the virtual device
 const uint16_t VIRTUAL_DEVICE_PRODUCT = 0x0420;
