@@ -22,6 +22,7 @@ Vec vec_cap(size_t data_size, size_t initial_capacity) {
     return v;
 }
 
+// Ensure the vector can store at least cap elements
 static inline void vec_grow(Vec *v, size_t cap) {
     if (v->cap >= cap) {
         return;
@@ -96,6 +97,7 @@ void vec_remove(Vec *v, size_t index, void *data) {
 
 void vec_clear(Vec *v) { v->len = 0; }
 
+// Add the content of a buffer of len elements to the end of the vector
 void vec_extend(Vec *v, void *data, size_t len) {
     if (len == 0) {
         return;

@@ -70,16 +70,18 @@ void setup_device(PhysicalDevice *dev) {
     ioctl(dev->event, EVIOCGBIT(0, EV_MAX), type_bits);
     // Loop over all event types
     for (int type = 0; type < EV_MAX; type++) {
-        // Ignore if the the device doesn't have this even type
+        // Ignore if the the device doesn't have any of this event type
         if (!bit_set(type_bits, type)) {
             continue;
         }
-
+        // Clear feat_bits to only have the features of the current type
         memset(feat_bits, 0, sizeof(feat_bits));
         ioctl(dev->event, EVIOCGBIT(type, KEY_MAX), feat_bits);
 
         // Loop over "instances" of type (i.e Each axis of a controller for EV_ABS)
         for (int i = 0; i < KEY_MAX; i++) {
+            // "instances" don't have to be consecutive (this is why we do all this instead of just worrying
+            // about the count)
             if (!bit_set(feat_bits, i)) {
                 continue;
             }
@@ -90,13 +92,15 @@ void setup_device(PhysicalDevice *dev) {
 
                 uint16_t index = dev->device_info.abs_count++;
 
-                dev->device_info.abs_id[index]   = i;
                 dev->device_info.abs_min[index]  = abs.minimum;
                 dev->device_info.abs_max[index]  = abs.maximum;
                 dev->device_info.abs_fuzz[index] = abs.fuzz;
                 dev->device_info.abs_flat[index] = abs.flat;
                 dev->device_info.abs_res[index]  = abs.resolution;
-                dev->mapping.abs_indices[i]      = index;
+                // Bidirectional mapping id <-> index
+                // We need this to avoid wasting space in packets because ids are sparse
+                dev->device_info.abs_id[index] = i;
+                dev->mapping.abs_indices[i]    = index;
             } else if (type == EV_REL) {
                 uint16_t index = dev->device_info.rel_count++;
 
@@ -240,14 +244,16 @@ void poll_devices() {
         // Try to get the name, default to DEFAULT_NAME if impossible
         char        name_buf[256] = {};
         const char *name;
-        if (ioctl(dev.event, EVIOCGNAME(256), name_buf) >= 0)
+        if (ioctl(dev.event, EVIOCGNAME(256), name_buf) >= 0) {
             name = name_buf;
-        else
+        } else {
             name = DEVICE_DEFAULT_NAME;
+        }
 
         // Filter events we don't care about
-        if (!filter_event(dev.event, input->d_name))
+        if (!filter_event(dev.event, input->d_name)) {
             goto skip;
+        }
 
         // Try to get uniq, drop device if we can't
         uniq_t uniq;
@@ -258,8 +264,9 @@ void poll_devices() {
             uniq = parse_uniq(uniq_str);
 
             // If we couldn't parse the uniq (this assumes uniq can't be zero, which is probably alright)
-            if (uniq == 0)
+            if (uniq == 0) {
                 goto skip;
+            }
         }
 
         // Check if we already know of this device
@@ -349,9 +356,9 @@ void poll_devices() {
     }
 }
 
-// "Execute" a MessageControllerState: set the led color and such using the hidraw interface
+// "Execute" a MessageControllerState: set the led color, rumble and flash using the hidraw interface
 void apply_controller_state(PhysicalDevice *dev, MessageControllerState *state) {
-    printf("HID:     (%012lx) Controller state: #%02x%02x%02x (%d, %d) rumble: (%d, %d)\n", dev->uniq,
+    printf("HID:     (%012lx) Controller state: #%02x%02x%02x flash: (%d, %d) rumble: (%d, %d)\n", dev->uniq,
            state->led[0], state->led[1], state->led[2], state->flash_on, state->flash_off,
            state->small_rumble, state->big_rumble);
 
@@ -369,7 +376,7 @@ void apply_controller_state(PhysicalDevice *dev, MessageControllerState *state) 
     if (state->flash_on == 0 && state->flash_off == 0) {
         // May not be necessary
         fsync(dev->hidraw);
-        // Send a second time, for some reason the flash doesn't stop otherwise
+        // Send a second time, to reenable the led
         write(dev->hidraw, buf, 32);
     };
 }

@@ -16,7 +16,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-// Arguments for a connecion thread
+// Arguments for a connection thread
 struct Connection {
     int      socket;
     uint32_t id;
