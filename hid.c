@@ -144,10 +144,10 @@ bool filter_event(int fd, char *event) {
         }
     }
 
-    // Check product and vendor id 054c:05c4 => Dualshock 4
+    // Check product and vendor id 054c:05c4 => Dualshock 4 (09cc is for the second generation)
     uint16_t info[4];
     ioctl(fd, EVIOCGID, info);
-    return info[1] == 0x054c && info[2] == 0x05c4;
+    return info[1] == 0x054c && (info[2] == 0x05c4 || info[2] == 0x09cc);
 }
 
 // Initialize vectors for polling

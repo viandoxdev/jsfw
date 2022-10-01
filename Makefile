@@ -1,7 +1,7 @@
 Q=@
 CC=gcc
 CFLAGS=-g -Wall -Wno-format-truncation -pthread -lm
-LDFLAGS=
+LDFLAGS=-lm
 BUILD_DIR=./objects
 BIN=jsfw
 
@@ -19,7 +19,7 @@ run: $(BIN)
 
 $(BIN): $(OBJECTS)
 	@echo "LD    $@"
-	$(Q) $(CC) $(CFLAGS) $(LDFLAGS) $^ -o $@
+	$(Q) $(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
 
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	@echo "CC    $<"
