@@ -1,0 +1,18 @@
+{
+    "controllers": [
+        {
+            "tag": "Admin",
+            "vendor": "054c",
+            "product": "09cc",
+            "name": "JSFW PS4 Controller (Admin)"
+        },
+        {
+            "tag": "User",
+            "vendor": "6942",
+            "product": "1337",
+            "name": "JSFW PS4 Controller (User)"
+        }
+    ],
+    "fifo_path": "/tmp/jsfw_fifo_2",
+    "retry_delay": 2.5
+}

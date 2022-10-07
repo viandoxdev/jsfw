@@ -1,9 +1,9 @@
 #include "client.h"
-
 #include "const.h"
 #include "json.h"
 #include "net.h"
 #include "util.h"
+#include "vec.h"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -25,17 +25,10 @@
 #include <time.h>
 #include <unistd.h>
 
-// The current device.
-// The fd being -1 means there is none
-typedef struct {
-    int               fd;
-    MessageDeviceInfo info;
-} VirtualDevice;
-
 static int fifo_attempt = 0;
 
-static struct sockaddr_in server_addr      = {};
-static char               server_addrp[64] = {};
+static struct sockaddr_in server_addr      = {0};
+static char               server_addrp[64] = {0};
 static uint16_t           server_port      = -1;
 
 static struct pollfd  poll_fds[2];
@@ -44,65 +37,122 @@ static struct pollfd *socket_poll = &poll_fds[1];
 static int            fifo        = -1;
 static int            sock        = -1;
 // static to avoid having this on the stack because a message is about 2kb in memory
-static Message       message;
-static VirtualDevice device = {};
+static Message message;
 
-// Test if the device exists
-static inline bool device_exists() { return device.fd > 0; }
+static Vec devices_fd;
+static Vec devices_info;
 
-// Struct representing the received json
-typedef struct {
-    char  *led_color;
-    double rumble_small;
-    double rumble_big;
-    double flash_on;
-    double flash_off;
-} JControllerState;
+static ClientConfig   config;
+static MessageRequest device_request;
 
-static const JSONAdapter JControllerStateAdapter[] = {
-    {".led_color", String, offsetof(JControllerState, led_color)},
-    {".rumble.0", Number, offsetof(JControllerState, rumble_small)},
-    {".rumble.1", Number, offsetof(JControllerState, rumble_big)},
-    {".flash.0", Number, offsetof(JControllerState, flash_on)},
-    {".flash.1", Number, offsetof(JControllerState, flash_off)},
+static void default_fifo_path(void *ptr) { *(char **)ptr = (char *)FIFO_PATH; }
+static void default_retry_delay(void *ptr) { *(struct timespec *)ptr = CONNECTION_RETRY_DELAY; }
+static void default_vendor(void *ptr) { *(int32_t *)ptr = VIRTUAL_DEVICE_VENDOR; }
+static void default_product(void *ptr) { *(int32_t *)ptr = VIRTUAL_DEVICE_PRODUCT; }
+static void default_name(void *ptr) { *(char **)ptr = (char *)VIRTUAL_DEVICE_NAME; }
+static void default_to_white(void *ptr) {
+    uint8_t *color = ptr;
+    color[0]       = 255;
+    color[1]       = 255;
+    color[2]       = 255;
+}
+
+static const JSONPropertyAdapter ControllerStateAdapterProps[] = {
+    {".led_color", &StringAdapter, offsetof(MessageControllerState, led),          default_to_white,    tsf_hex_to_color   },
+    {".rumble.0",  &NumberAdapter, offsetof(MessageControllerState, small_rumble), default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".rumble.1",  &NumberAdapter, offsetof(MessageControllerState, big_rumble),   default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".flash.0",   &NumberAdapter, offsetof(MessageControllerState, flash_on),     default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".flash.1",   &NumberAdapter, offsetof(MessageControllerState, flash_off),    default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".index",     &NumberAdapter, offsetof(MessageControllerState, index),        default_to_zero_u32, tsf_num_to_int     }
+};
+static const JSONAdapter ControllerStateAdapter = {
+    .props      = (JSONPropertyAdapter *)ControllerStateAdapterProps,
+    .prop_count = sizeof(ControllerStateAdapterProps) / sizeof(JSONPropertyAdapter),
+    .size       = sizeof(MessageControllerState),
 };
 
-// Try to destroy the device
-void device_destroy() {
-    if (!device_exists()) {
+static const JSONPropertyAdapter ControllerAdapterProps[] = {
+    {".tag",     &StringAdapter, offsetof(ClientController, tag),            default_to_null, NULL          },
+    {".vendor",  &StringAdapter, offsetof(ClientController, device_vendor),  default_vendor,  tsf_hex_to_i32},
+    {".product", &StringAdapter, offsetof(ClientController, device_product), default_product, tsf_hex_to_i32},
+    {".name",    &StringAdapter, offsetof(ClientController, device_name),    default_name,    NULL          },
+};
+static const JSONAdapter ControllerAdapter = {
+    .props      = ControllerAdapterProps,
+    .prop_count = sizeof(ControllerAdapterProps) / sizeof(JSONPropertyAdapter),
+    .size       = sizeof(ClientController),
+};
+
+static const JSONPropertyAdapter ClientConfigAdapterProps[] = {
+    {".controllers[]", &ControllerAdapter, offsetof(ClientConfig, controllers), default_to_null,     NULL                  },
+    {".fifo_path",     &StringAdapter,     offsetof(ClientConfig, fifo_path),   default_fifo_path,   NULL                  },
+    {".retry_delay",   &NumberAdapter,     offsetof(ClientConfig, retry_delay), default_retry_delay, tsf_numsec_to_timespec}
+};
+static const JSONAdapter ConfigAdapter = {
+    .props      = ClientConfigAdapterProps,
+    .prop_count = sizeof(ClientConfigAdapterProps) / sizeof(JSONPropertyAdapter),
+    .size       = sizeof(ClientConfig),
+};
+
+void destroy_devices() {
+    for (int i = 0; i < config.controller_count; i++) {
+        int                fd   = *(int *)vec_get(&devices_fd, i);
+        MessageDeviceInfo *info = vec_get(&devices_info, i);
+
+        if (info->code == DeviceInfo) {
+            ioctl(fd, UI_DEV_DESTROY);
+            info->code = NoMessage;
+        }
+    }
+}
+
+bool device_exists(int index) {
+    if (index >= devices_info.len) {
+        return false;
+    }
+
+    MessageDeviceInfo *info = vec_get(&devices_info, index);
+    return info->code == DeviceInfo;
+}
+
+void device_destroy(int index) {
+    if (index >= devices_info.len) {
         return;
     }
 
-    ioctl(device.fd, UI_DEV_DESTROY);
-    close(device.fd);
-    device.fd = -1;
-    printf("CLIENT: Destroyed device\n");
+    int fd = *(int *)vec_get(&devices_fd, index);
+
+    MessageDeviceInfo *info = vec_get(&devices_info, index);
+
+    if (info->code == DeviceInfo) {
+        ioctl(fd, UI_DEV_DESTROY);
+        info->code = NoMessage;
+    }
 }
 
-// (Re)Initialize the device
 void device_init(MessageDeviceInfo *dev) {
-    device_destroy();
-
-    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-    if (fd < 0) {
-        perror("CLIENT: Error while opening /dev/uinput, ");
-        exit(1);
+    if (dev->index >= devices_info.len) {
+        printf("CLIENT: Got wrong device index\n");
+        return;
     }
 
-    // Setup device_info
+    device_destroy(dev->index);
+
+    int fd = *(int*)vec_get(&devices_fd, dev->index);
 
     // Abs
     if (dev->abs_count > 0) {
         ioctl(fd, UI_SET_EVBIT, EV_ABS);
         for (int i = 0; i < dev->abs_count; i++) {
-            struct uinput_abs_setup setup = {};
-            setup.code                    = dev->abs_id[i];
-            setup.absinfo.minimum         = dev->abs_min[i];
-            setup.absinfo.maximum         = dev->abs_max[i];
-            setup.absinfo.fuzz            = dev->abs_fuzz[i];
-            setup.absinfo.flat            = dev->abs_flat[i];
-            setup.absinfo.resolution      = dev->abs_res[i];
-            setup.absinfo.value           = 0;
+            struct uinput_abs_setup setup = {0};
+
+            setup.code               = dev->abs_id[i];
+            setup.absinfo.minimum    = dev->abs_min[i];
+            setup.absinfo.maximum    = dev->abs_max[i];
+            setup.absinfo.fuzz       = dev->abs_fuzz[i];
+            setup.absinfo.flat       = dev->abs_flat[i];
+            setup.absinfo.resolution = dev->abs_res[i];
+            setup.absinfo.value      = 0;
             ioctl(fd, UI_ABS_SETUP, &setup);
         }
     }
@@ -123,67 +173,95 @@ void device_init(MessageDeviceInfo *dev) {
         }
     }
 
-    struct uinput_setup setup = {};
+    ClientController *ctr = &config.controllers[dev->index];
+
+    struct uinput_setup setup = {0};
 
     setup.id.bustype = BUS_VIRTUAL;
-    setup.id.vendor  = VIRTUAL_DEVICE_VENDOR;
-    setup.id.product = VIRTUAL_DEVICE_PRODUCT;
+    setup.id.vendor  = ctr->device_vendor;
+    setup.id.product = ctr->device_product;
     setup.id.version = VIRTUAL_DEVICE_VERSION;
-    strncpy(setup.name, VIRTUAL_DEVICE_NAME, UINPUT_MAX_NAME_SIZE);
+    strncpy(setup.name, ctr->device_name, UINPUT_MAX_NAME_SIZE);
 
     ioctl(fd, UI_DEV_SETUP, &setup);
     ioctl(fd, UI_DEV_CREATE);
 
-    device.fd = fd;
-    memcpy(&device.info, dev, sizeof(MessageDeviceInfo));
-    printf("CLIENT: Created device (abs: %d, rel: %d, key: %d)\n", dev->abs_count, dev->rel_count,
-           dev->key_count);
+    MessageDeviceInfo * dst = vec_get(&devices_info, dev->index);
+
+    memcpy(dst, dev, sizeof(MessageDeviceInfo));
+    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->index, ctr->device_name, dev->abs_count, dev->rel_count, dev->key_count);
 }
 
 // Send an event to uinput, device must exist
-int device_emit(uint16_t type, uint16_t id, uint32_t value) {
-    struct input_event event = {};
+bool device_emit(int index, uint16_t type, uint16_t id, uint32_t value) {
+    if(index >= devices_fd.len) {
+        return true;
+    }
+
+    int fd = *(int*) vec_get(&devices_fd, index);
+    struct input_event event = {0};
 
     event.type  = type;
     event.code  = id;
     event.value = value;
 
-    return write(device.fd, &event, sizeof(event)) != sizeof(event);
+    return write(fd, &event, sizeof(event)) != sizeof(event);
 }
 
 // Update device with report
 void device_handle_report(MessageDeviceReport *report) {
-    if (!device_exists()) {
-        printf("CLIENT: Got report before device info\n");
+    if (!device_exists(report->index)) {
+        printf("CLIENT: [%d] Got report before device info\n", report->index);
         return;
     }
 
-    if (report->abs_count != device.info.abs_count || report->rel_count != device.info.rel_count ||
-        report->key_count != device.info.key_count) {
+    MessageDeviceInfo * info = vec_get(&devices_info, report->index);
+
+    if (report->abs_count != info->abs_count || report->rel_count != info->rel_count ||
+        report->key_count != info->key_count) {
         printf("CLIENT: Report doesn't match with device info\n");
         return;
     }
 
     for (int i = 0; i < report->abs_count; i++) {
-        if (device_emit(EV_ABS, device.info.abs_id[i], report->abs[i]) != 0) {
+        if (device_emit(report->index, EV_ABS, info->abs_id[i], report->abs[i]) != 0) {
             printf("CLIENT: Error writing abs event to uinput\n");
         }
     }
 
     for (int i = 0; i < report->rel_count; i++) {
-        if (device_emit(EV_REL, device.info.rel_id[i], report->rel[i]) != 0) {
+        if (device_emit(report->index, EV_REL, info->rel_id[i], report->rel[i]) != 0) {
             printf("CLIENT: Error writing rel event to uinput\n");
         }
     }
 
     for (int i = 0; i < report->key_count; i++) {
-        if (device_emit(EV_KEY, device.info.key_id[i], (uint32_t)(!report->key[i]) - 1) != 0) {
+        if (device_emit(report->index, EV_KEY, info->key_id[i], (uint32_t)(!report->key[i]) - 1) != 0) {
             printf("CLIENT: Error writing key event to uinput\n");
         }
     }
     // Reports are sent by the server every time the server receives an EV_SYN from the physical device, so we
     // send one when we receive the report to match
-    device_emit(EV_SYN, 0, 0);
+    device_emit(report->index, EV_SYN, 0, 0);
+}
+
+void setup_devices() {
+    devices_fd   = vec_of(int);
+    devices_info = vec_of(MessageDeviceInfo);
+
+    MessageDeviceInfo no_info = {0};
+    no_info.code              = NoMessage;
+
+    for (int i = 0; i < config.controller_count; i++) {
+        int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+        if (fd < 0) {
+            perror("CLIENT: Can't open /dev/uinput, aborting now");
+            exit(1);
+        }
+
+        vec_push(&devices_fd, &fd);
+        vec_push(&devices_info, &no_info);
+    }
 }
 
 void setup_fifo();
@@ -191,10 +269,10 @@ void setup_fifo();
 // (Re)Open the fifo
 void open_fifo() {
     close(fifo);
-    fifo = open(FIFO_PATH, O_RDONLY | O_NONBLOCK);
+    fifo = open(config.fifo_path, O_RDONLY | O_NONBLOCK);
     if (fifo < 0 && fifo_attempt == 0) {
         fifo_attempt++;
-        unlink(FIFO_PATH);
+        unlink(config.fifo_path);
         setup_fifo();
     } else if (fifo < 0) {
         panicf("CLIENT: Couldn't open fifo, aborting\n");
@@ -205,7 +283,7 @@ void open_fifo() {
 // Ensure the fifo exists and opens it (also setup poll_fd)
 void setup_fifo() {
     mode_t prev = umask(0);
-    mkfifo(FIFO_PATH, 0666);
+    mkfifo(config.fifo_path, 0666);
     umask(prev);
 
     open_fifo();
@@ -216,11 +294,11 @@ void setup_fifo() {
 
 // (Re)Connect to the server
 void connect_server() {
-    while (1) {
+    while (true) {
         if (sock > 0) {
             // Close previous connection
-            device_destroy();
             shutdown(sock, SHUT_RDWR);
+            destroy_devices();
             close(sock);
         }
 
@@ -230,11 +308,9 @@ void connect_server() {
         }
 
         if (connect(sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0) {
-            printf("CLIENT: Couldn't connect to %s:%d, retrying in %ds\n", server_addrp, server_port,
-                   CONNECTION_RETRY_DELAY);
-            struct timespec ts = {};
-            ts.tv_sec          = CONNECTION_RETRY_DELAY;
-            nanosleep(&ts, NULL);
+            printf("CLIENT: Couldn't connect to %s:%d, retrying in %lu.%09lus\n", server_addrp, server_port,
+                   config.retry_delay.tv_sec, config.retry_delay.tv_nsec);
+            nanosleep(&config.retry_delay, NULL);
             continue;
         }
         // Set non blocking, only do that after connection (instead of with SOCK_NONBLOCK at socket creation)
@@ -242,6 +318,16 @@ void connect_server() {
         fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
         socket_poll->fd = sock;
         printf("CLIENT: Connected !\n");
+
+        uint8_t buf[2048] __attribute__((aligned(4)));
+
+        int len = msg_serialize(buf, 2048, (Message *)&device_request);
+        if (len > 0) {
+            if (send(sock, buf, len, 0) > 0) {
+                printf("CLIENT: Sent device request\n");
+            };
+        };
+
         return;
     }
 }
@@ -264,22 +350,45 @@ void setup_server(char *address, uint16_t port) {
     connect_server();
 }
 
-void early_checks() {
-    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-    if (fd < 0) {
-        perror("CLIENT: Can't open /dev/uinput, aborting now: ");
-        exit(1);
+void build_device_request() {
+    char **tags = malloc(config.controller_count * sizeof(char *));
+    for (int i = 0; i < config.controller_count; i++) {
+        tags[i] = config.controllers[i].tag;
     }
-    close(fd);
+
+    device_request.code          = Request;
+    device_request.request_count = config.controller_count;
+    device_request.requests      = tags;
 }
 
-void client_run(char *address, uint16_t port) {
-    // Device doesn't exist yet
-    device.fd = -1;
+void client_run(char *address, uint16_t port, char *config_path) {
+    // Parse the config
+    {
+        FILE *configfd = fopen(config_path, "r");
+        if (configfd == NULL) {
+            perror("CLIENT: Couldn't open config file");
+            exit(1);
+        }
 
-    early_checks();
+        char    *cbuf = malloc(8192);
+        uint8_t *jbuf = (uint8_t *)cbuf + 4096;
+
+        int len = fread(cbuf, 1, 4096, configfd);
+        if (json_parse(cbuf, len, jbuf, 4096) != 0) {
+            printf("CLIENT: Couldn't parse config, %s (at index %lu)\n", json_strerr(), json_errloc());
+            exit(1);
+        }
+
+        json_adapt(jbuf, &ConfigAdapter, &config);
+
+        free(cbuf);
+        fclose(configfd);
+    }
+
     setup_fifo();
+    build_device_request();
     setup_server(address, port);
+    setup_devices();
 
     uint8_t buf[2048] __attribute__((aligned(4)));
     uint8_t json_buf[2048] __attribute__((aligned(8)));
@@ -287,7 +396,7 @@ void client_run(char *address, uint16_t port) {
     while (1) {
         int rc = poll(poll_fds, 2, -1);
         if (rc < 0) {
-            perror("CLIENT: Error on poll, ");
+            perror("CLIENT: Error on poll");
             exit(1);
         }
 
@@ -299,55 +408,19 @@ void client_run(char *address, uint16_t port) {
                 // We've got data from the fifo
                 int rc = json_parse((char *)buf, len, json_buf, 2048);
                 if (rc < 0) {
-                    printf("CLIENT: Error when parsing fifo message as json (%s at index %lu)\n",
-                           json_strerr(), json_errloc());
+                    printf("CLIENT: Error when parsing fifo message as json (%s at index %lu)\n", json_strerr(), json_errloc());
                 } else {
-                    JControllerState state;
-                    // default values
-                    state.flash_off    = 0.0;
-                    state.flash_on     = 0.0;
-                    state.led_color    = NULL;
-                    state.rumble_small = 0.0;
-                    state.rumble_big   = 0.0;
-
-                    json_adapt(json_buf, (JSONAdapter *)JControllerStateAdapter,
-                               sizeof(JControllerStateAdapter) / sizeof(JSONAdapter), &state);
-
                     MessageControllerState msg;
-                    msg.code         = ControllerState;
-                    msg.small_rumble = (uint8_t)(fmax(fmin(1.0, state.rumble_small), 0.0) * 255.0);
-                    msg.big_rumble   = (uint8_t)(fmax(fmin(1.0, state.rumble_big), 0.0) * 255.0);
-                    msg.flash_on     = (uint8_t)(fmax(fmin(1.0, state.flash_on), 0.0) * 255.0);
-                    msg.flash_off    = (uint8_t)(fmax(fmin(1.0, state.flash_off), 0.0) * 255.0);
-
-                    if (state.led_color == NULL || strnlen(state.led_color, 8) != 7) {
-                        msg.led[0] = 0;
-                        msg.led[1] = 0;
-                        msg.led[2] = 0;
-                    } else {
-                        char *s    = state.led_color;
-                        msg.led[0] = parse_hex_digit(s[1]);
-                        msg.led[0] <<= 4;
-                        msg.led[0] += parse_hex_digit(s[2]);
-
-                        msg.led[1] = parse_hex_digit(s[3]);
-                        msg.led[1] <<= 4;
-                        msg.led[1] += parse_hex_digit(s[4]);
-
-                        msg.led[2] = parse_hex_digit(s[5]);
-                        msg.led[2] <<= 4;
-                        msg.led[2] += parse_hex_digit(s[6]);
-
-                        free(state.led_color);
-                    }
+                    msg.code = ControllerState;
+                    json_adapt(json_buf, &ControllerStateAdapter, &msg);
 
                     int len = msg_serialize(buf, 2048, (Message *)&msg);
                     if (len > 0) {
                         if (send(sock, buf, len, 0) > 0) {
                             printf("CLIENT: Sent controller state: #%02x%02x%02x flash: (%d, %d) rumble: "
-                                   "(%d, %d)\n",
-                                   msg.led[0], msg.led[1], msg.led[2], msg.flash_on, msg.flash_off,
-                                   msg.small_rumble, msg.big_rumble);
+                                   "(%d, %d) -> [%d]\n",
+                                   msg.led[0], msg.led[1], msg.led[2], msg.flash_on, msg.flash_off, msg.small_rumble,
+                                   msg.big_rumble, msg.index);
                         };
                     };
                 }
@@ -359,9 +432,8 @@ void client_run(char *address, uint16_t port) {
             int len = recv(sock, buf, 2048, 0);
             if (len <= 0) {
                 printf("CLIENT: Lost connection to server, reconnecting\n");
-                shutdown(sock, SHUT_RDWR);
                 connect_server();
-                // we can continue here because there's nothing after, unlike above for fifo (this reduces
+                // we can use continue here because there's nothing after, unlike above for fifo (this reduces
                 // indentation instead of needing an else block)
                 continue;
             }
@@ -384,13 +456,17 @@ void client_run(char *address, uint16_t port) {
             }
 
             if (message.code == DeviceInfo) {
-                if (device_exists()) {
-                    printf("CLIENT: Got more than one device info\n");
+                if (device_exists(message.device_info.index)) {
+                    printf("CLIENT: Got more than one device info for same device\n");
                 }
 
                 device_init((MessageDeviceInfo *)&message);
+                printf("CLIENT: Got device %d\n", message.device_info.index);
             } else if (message.code == DeviceReport) {
                 device_handle_report((MessageDeviceReport *)&message);
+            } else if (message.code == DeviceDestroy) {
+                device_destroy(message.destroy.index);
+                printf("CLIENT: Lost device %d\n", message.destroy.index);
             } else {
                 printf("CLIENT: Illegal message\n");
             }

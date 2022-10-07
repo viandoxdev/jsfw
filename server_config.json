@@ -1,0 +1,18 @@
+{
+    "controllers": [
+        {
+            "filter": { "mac_address": "00:b0:d0:63:c2:26" },
+            "tag": "Admin",
+            "properties": { "duplicate": true }
+        },
+        {
+            "filter": { "vendor": "054c", "product": "05c4", "js": true },
+            "tag": "User"
+        },
+        {
+            "filter": { "vendor": "046d", "product": "c332"},
+            "tag": "Mouse"
+        }
+    ],
+    "poll_interval": 1
+}

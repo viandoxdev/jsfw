@@ -40,7 +40,7 @@ static inline void vec_grow(Vec *v, size_t cap) {
 
 void vec_push(Vec *v, void *data) {
     vec_grow(v, v->len + 1);
-    memcpy(v->data + v->stride * v->len++, data, v->stride);
+    memcpy((u_int8_t *)v->data + v->stride * v->len++, data, v->stride);
 }
 
 void vec_pop(Vec *v, void *data) {
@@ -68,7 +68,7 @@ void vec_insert(Vec *v, void *data, size_t index) {
     }
     vec_grow(v, v->len + 1);
 
-    void *slot = v->data + index * v->stride;
+    uint8_t *slot = v->data + index * v->stride;
     if (index < v->len) {
         memmove(slot + v->stride, slot, (v->len - index) * v->stride);
     }
@@ -86,7 +86,7 @@ void vec_remove(Vec *v, size_t index, void *data) {
         return;
     }
 
-    void *slot = v->data + index * v->stride;
+    uint8_t *slot = v->data + index * v->stride;
     if (data != NULL) {
         memcpy(data, slot, v->stride);
     }
@@ -103,7 +103,7 @@ void vec_extend(Vec *v, void *data, size_t len) {
         return;
     }
     vec_grow(v, v->len + len);
-    memcpy(v->data + v->stride * v->len, data, v->stride * len);
+    memcpy((uint8_t*)v->data + v->stride * v->len, data, v->stride * len);
     v->len += len;
 }
 

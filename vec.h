@@ -2,11 +2,12 @@
 #ifndef VEC_H_
 #define VEC_H_
 #include <unistd.h>
+#include <stdint.h>
 
 #define vec_of(type) vec_new(sizeof(type))
 
 typedef struct {
-    void  *data;
+    uint8_t *data;
     size_t cap;
     size_t len;
     size_t stride;

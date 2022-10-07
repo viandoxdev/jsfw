@@ -22,6 +22,16 @@ JSONError json_errno() { return jerrno; }
 // Get the location of the last json parsing error
 size_t json_errloc() { return jerr_index; }
 
+static inline bool is_primitive(const JSONAdapter *adapter) { return adapter->props == NULL; }
+
+static const char *json_type_name(JSONType type) {
+    if (type > 0 && type < 7) {
+        return JSONTypeName[type];
+    } else {
+        return JSONTypeName[0];
+    }
+}
+
 // Shorthand to set jerno and return -1;
 // i.e
 // ```c
@@ -111,27 +121,27 @@ static inline int json_parse_string(const char **buf, const char *buf_end, uint8
                         return set_jerrno(DstOverflow);
                     }
 
-                    *(*dst)++ = 0b11000000 | (un_codepoint >> 6 & 0b011111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 0 & 0b111111);
+                    *(*dst)++ = 0xC0 | (un_codepoint >> 6 & 0x1F);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 0 & 0x3F);
                     header->len += 2;
                 } else if (un_codepoint <= 0xffff) { // 3 byte codepoint
                     if (*dst + 3 >= dst_end) {
                         return set_jerrno(DstOverflow);
                     }
 
-                    *(*dst)++ = 0b11100000 | (un_codepoint >> 12 & 0b1111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 6 & 0b111111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 0 & 0b111111);
+                    *(*dst)++ = 0xE0 | (un_codepoint >> 12 & 0x0F);
+                    *(*dst)++ = 0x80 | (un_codepoint >>  6 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >>  0 & 0x3F);
                     header->len += 3;
                 } else if (un_codepoint <= 0x10ffff) { // 4 byte codepoint
                     if (*dst + 4 >= dst_end) {
                         return set_jerrno(DstOverflow);
                     }
 
-                    *(*dst)++ = 0b11110000 | (un_codepoint >> 18 & 0b111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 12 & 0b111111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 6 & 0b111111);
-                    *(*dst)++ = 0b10000000 | (un_codepoint >> 0 & 0b111111);
+                    *(*dst)++ = 0xF0 | (un_codepoint >> 18 & 0x07);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 12 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >>  6 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >>  0 & 0x3F);
                     header->len += 4;
                 } else { // Illegal codepoint
                     return set_jerrno(StringBadUnicode);
@@ -431,6 +441,7 @@ static int json_parse_array(const char **buf, const char *buf_end, uint8_t **res
     }
 
     if (**buf == ']') { // Array is empty
+        (*buf)++;
         header->len = 0;
         return 0;
     }
@@ -490,6 +501,7 @@ static int json_parse_object(const char **buf, const char *buf_end, uint8_t **re
         return set_jerrno(SrcOverflow);
     }
     if (**buf == '}') {
+        (*buf)++;
         // The object is empty
         header->len = 0;
         return 0;
@@ -661,49 +673,186 @@ void json_print_value_priv(uint8_t **buf) {
 // /!\ doesn't handle strings well
 void json_print_value(uint8_t *buf) { json_print_value_priv(&buf); }
 
-// Loop over adapters and set accordingly
-static void json_adapt_set(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr, char *path) {
-    JSONHeader *header = (JSONHeader *)buf;
+void json_print_buffer(uint8_t *buf) {
+    uint8_t *end = buf + align_8(((JSONHeader *)buf)->len) + sizeof(JSONHeader);
+    while (buf < end) {
+        JSONHeader *header = (JSONHeader *)buf;
+        printf("[\033[32m%s\033[0m][\033[31m%lu\033[0m]", json_type_name(header->type), align_8(header->len));
+        buf += sizeof(JSONHeader);
 
-    for (int i = 0; i < adapter_count; i++) {
-        if (strcmp(path, adapters[i].path) == 0 && header->type == adapters[i].type) {
+        if (header->type == Object || header->type == Array)
+            continue;
 
-            void *p = ptr + adapters[i].offset;
+        printf("[\033[34m");
+        switch (header->type) {
+        case Number:
+            printf("%lf", *(double *)buf);
+            break;
+        case Boolean:
+            printf("%s", *(uint64_t *)buf == 1 ? "true" : "false");
+            break;
+        case Null:
+            printf("null");
+            break;
+        case String:
+            printf("\"%.*s\"", header->len, (char *)buf);
+            break;
+        }
+        printf("\033[0m]");
 
-            switch (header->type) {
-            case String: {
-                char *v = malloc(header->len + 1);
-                strncpy(v, (char *)(buf + sizeof(JSONHeader)), header->len);
-                v[header->len] = '\0';
-                *(char **)p    = v;
-            } break;
-            case Number:
-                *(double *)p = *(double *)(buf + sizeof(JSONHeader));
-                break;
-            case Boolean:
-                *(bool *)p = *(uint64_t *)(buf + sizeof(JSONHeader)) == 1;
-                break;
+        buf += align_8(header->len);
+    }
+    printf("\n");
+}
+
+static inline bool ends_with(const char *str, const char *pat) {
+    size_t strl = strlen(str);
+    size_t patl = strlen(pat);
+    return strl >= patl && strcmp(str + strl - patl, pat) == 0;
+}
+
+static void json_adapt_set_defaults(const JSONAdapter *adapter, void *ptr) {
+    if (!is_primitive(adapter)) {
+        for (int i = 0; i < adapter->prop_count; i++) {
+            uint8_t *p = (uint8_t*)ptr + adapter->props[i].offset;
+
+            if (ends_with(adapter->props[i].path, "[]")) {
+                *(size_t *)(p + sizeof(void *)) = 0;
+            }
+
+            if (adapter->props[i].default_func != NULL) {
+                adapter->props[i].default_func(p);
+            } else if (!is_primitive(adapter->props[i].type)) {
+                json_adapt_set_defaults(adapter->props[i].type, p);
             }
         }
     }
 }
 
 // Run adapters on a value
-static void json_adapt_priv(uint8_t **buf, JSONAdapter *adapters, size_t adapter_count, void *ptr,
+//   buf: is a reference of the pointer to the json buffer
+//   adapter: is the adapter to run
+//   ptr: points where to write the data
+//   path_buffer: points to the begining of the path buffer
+//   full_path: points to the "current" path
+//   path: points to the end of the current path (most of the times)
+static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr, char *path_buffer,
                             char *full_path, char *path) {
     JSONHeader *header = (JSONHeader *)*buf;
 
+    if (is_primitive(adapter)) {
+        // The type of a primitive adapter is stored in prop_count
+        JSONType type = adapter->prop_count;
+
+        if (type != header->type) {
+            printf("JSON: Mismatched type on %s: expected %s got %s\n", path_buffer, json_type_name(type),
+                   json_type_name(header->type));
+            return;
+        }
+
+        *buf += sizeof(JSONHeader);
+
+        if (type == Boolean) {
+
+            *(bool *)ptr = *(uint64_t *)(*buf) == 1;
+
+        } else if (type == Number) {
+
+            *(double *)ptr = *(double *)(*buf);
+
+        } else if (type == String) {
+
+            char *v = malloc(header->len + 1);
+            strncpy(v, (char *)(*buf), header->len);
+            v[header->len] = '\0';
+            *(char **)ptr  = v;
+
+        } else {
+            printf("JSON: Unknown or illegal primitive adapter of type %s\n", json_type_name(type));
+        }
+
+        return;
+    }
+
+    // This is only true once, so we set default values there
+    if (path == full_path) {
+        json_adapt_set_defaults(adapter, ptr);
+    }
+
+    if (header->type == Array) {
+        path[0] = '[';
+        path[1] = ']';
+        path[2] = '\0';
+    }
+
+    uint8_t buffer_small[64];
+
+    for (int i = 0; i < adapter->prop_count; i++) {
+        if (strcmp(adapter->props[i].path, full_path) == 0) {
+            uint8_t  *p    = (uint8_t*)ptr + adapter->props[i].offset;
+            size_t size = adapter->props[i].type->size;
+
+            if (header->type == Array) {
+                uint8_t *array_buf = *buf + sizeof(JSONHeader);
+                uint8_t *end       = array_buf + header->len;
+                size_t   len;
+                for (len = 0; array_buf < end; len++) {
+                    array_buf += align_8(((JSONHeader *)array_buf)->len);
+                    array_buf += sizeof(JSONHeader);
+                };
+
+                uint8_t *array_ptr = malloc(len * size);
+
+                array_buf = *buf + sizeof(JSONHeader);
+                for (size_t index = 0; index < len; index++) {
+                    path[0] = '.';
+                    path[1] = '\0';
+                    json_adapt_priv(&array_buf, adapter->props[i].type, array_ptr + index * size, path_buffer,
+                                    path, path);
+                    path[0] = '\0';
+                }
+
+                if (adapter->props[i].transformer != NULL) {
+                    printf("JSON: Transformers aren't yet allowed on arrays\n");
+                }
+
+                *(void **)p                     = array_ptr;
+                *(size_t *)(p + sizeof(void *)) = len;
+            } else {
+                void *tmp_ptr;
+                if (size <= 64) {
+                    tmp_ptr = buffer_small;
+                } else {
+                    tmp_ptr = malloc(size);
+                }
+
+                uint8_t *new_buf = *buf;
+                path[0]          = '.';
+                path[1]          = '\0';
+                json_adapt_priv(&new_buf, adapter->props[i].type, tmp_ptr, path_buffer, path, path);
+                path[0] = '\0';
+
+                if (adapter->props[i].transformer != NULL) {
+                    adapter->props[i].transformer(tmp_ptr, p);
+                } else {
+                    memcpy(p, tmp_ptr, size);
+                }
+
+                if (tmp_ptr != buffer_small) {
+                    free(tmp_ptr);
+                }
+            }
+        }
+    }
+
     switch (header->type) {
     case String:
-        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
         *buf += sizeof(JSONHeader) + align_8(header->len);
         break;
     case Number:
-        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
         *buf += sizeof(JSONHeader) + sizeof(double);
         break;
     case Boolean:
-        json_adapt_set(*buf, adapters, adapter_count, ptr, full_path);
         *buf += sizeof(JSONHeader) + 8;
         break;
     case Null:
@@ -714,7 +863,7 @@ static void json_adapt_priv(uint8_t **buf, JSONAdapter *adapters, size_t adapter
         uint8_t *end = *buf + header->len;
         for (size_t index = 0; *buf < end; index++) {
             int len = sprintf(path, ".%lu", index);
-            json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
+            json_adapt_priv(buf, adapter, ptr, path_buffer, full_path, path + len);
         }
     } break;
     case Object: {
@@ -727,14 +876,14 @@ static void json_adapt_priv(uint8_t **buf, JSONAdapter *adapters, size_t adapter
             int len = sprintf(path, ".%.*s", key_header->len, *buf);
             *buf += align_8(key_header->len);
 
-            json_adapt_priv(buf, adapters, adapter_count, ptr, full_path, path + len);
+            json_adapt_priv(buf, adapter, ptr, path_buffer, full_path, path + len);
         }
     } break;
     }
 }
 
-// Run adapters on a json value
-void json_adapt(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr) {
+// Run adapter on a json value
+void json_adapt(uint8_t *buf, const JSONAdapter *adapter, void *ptr) {
     char path[512] = ".";
-    json_adapt_priv(&buf, adapters, adapter_count, ptr, path, path);
+    json_adapt_priv(&buf, adapter, ptr, path, path, path);
 }

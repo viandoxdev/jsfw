@@ -1,11 +1,11 @@
 Q=@
 CC=gcc
-CFLAGS=-g -Wall -Wno-format-truncation -pthread -lm
+CFLAGS=-std=c11 -pedantic -g -Wall -Wno-format-truncation -pthread -lm -D_GNU_SOURCE
 LDFLAGS=-lm
 BUILD_DIR=./objects
 BIN=jsfw
 
-RUNARGS=client localhost 7776
+RUNARGS=server 7776 ./server_config.json
 
 SOURCES=$(wildcard *.c)
 

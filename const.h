@@ -5,9 +5,10 @@
 #include <time.h>
 
 extern const struct timespec POLL_DEVICE_INTERVAL;
+extern const int             REQUEST_TIMEOUT;
 extern const char           *DEVICE_DEFAULT_NAME;
 extern const char           *FIFO_PATH;
-extern const uint32_t        CONNECTION_RETRY_DELAY;
+extern const struct timespec CONNECTION_RETRY_DELAY;
 extern const uint16_t        VIRTUAL_DEVICE_VENDOR;
 extern const uint16_t        VIRTUAL_DEVICE_PRODUCT;
 extern const uint16_t        VIRTUAL_DEVICE_VERSION;
