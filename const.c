@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <time.h>
 
+// These are default values for the most part
+// Any value updated here should also be updated in README.md
+
 // How long between each device poll
 const struct timespec POLL_DEVICE_INTERVAL = {.tv_sec = 1, .tv_nsec = 0};
 // How long (in ms) to wait for a request message on a connection before giving up
