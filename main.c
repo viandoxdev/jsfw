@@ -1,5 +1,4 @@
 #include "client.h"
-#include "hid.h"
 #include "server.h"
 #include "util.h"
 

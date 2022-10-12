@@ -33,9 +33,9 @@ void tsf_numsec_to_timespec(void *arg, void *ptr);
 void tsf_numsec_to_intms(void *arg, void *ptr);
 void tsf_uniq_to_u64(void *arg, void *ptr);
 void tsf_hex_to_i32(void *arg, void *ptr);
-void tsf_double_to_size(void * arg, void * ptr);
+void tsf_double_to_size(void *arg, void *ptr);
 void tsf_hex_to_color(void *arg, void *ptr);
-void tsf_num_to_u8_clamp(void * arg, void *ptr);
-void tsf_num_to_int(void * arg, void *ptr);
+void tsf_num_to_u8_clamp(void *arg, void *ptr);
+void tsf_num_to_int(void *arg, void *ptr);
 
 #endif

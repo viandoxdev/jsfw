@@ -2,9 +2,9 @@
 #ifndef JSON_H_
 #define JSON_H_
 #include <limits.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 typedef struct __attribute__((packed, aligned(8))) {
     uint32_t type;
@@ -37,8 +37,6 @@ typedef enum {
     ObjectBadChar    = 9,
     JERRORNO_MAX     = 10
 } JSONError;
-
-struct JSONAdapter;
 
 typedef struct {
     char                     *path;
@@ -83,14 +81,8 @@ static const char *JSONErrorMessage[JERRORNO_MAX + 1] = {
     "?",
 };
 
-static const char * JSONTypeName[7] = {
-    "[Unknown]",
-    "String",
-    "Number",
-    "Object",
-    "Array",
-    "Boolean",
-    "Null",
+static const char *JSONTypeName[7] = {
+    "[Unknown]", "String", "Number", "Object", "Array", "Boolean", "Null",
 };
 
 const JSONAdapter NumberAdapter = {

@@ -1,4 +1,5 @@
 #include "client.h"
+
 #include "const.h"
 #include "json.h"
 #include "net.h"
@@ -10,7 +11,6 @@
 #include <linux/input-event-codes.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
-#include <math.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
@@ -138,7 +138,7 @@ void device_init(MessageDeviceInfo *dev) {
 
     device_destroy(dev->index);
 
-    int fd = *(int*)vec_get(&devices_fd, dev->index);
+    int fd = *(int *)vec_get(&devices_fd, dev->index);
 
     // Abs
     if (dev->abs_count > 0) {
@@ -186,19 +186,20 @@ void device_init(MessageDeviceInfo *dev) {
     ioctl(fd, UI_DEV_SETUP, &setup);
     ioctl(fd, UI_DEV_CREATE);
 
-    MessageDeviceInfo * dst = vec_get(&devices_info, dev->index);
+    MessageDeviceInfo *dst = vec_get(&devices_info, dev->index);
 
     memcpy(dst, dev, sizeof(MessageDeviceInfo));
-    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->index, ctr->device_name, dev->abs_count, dev->rel_count, dev->key_count);
+    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->index, ctr->device_name, dev->abs_count,
+           dev->rel_count, dev->key_count);
 }
 
 // Send an event to uinput, device must exist
 bool device_emit(int index, uint16_t type, uint16_t id, uint32_t value) {
-    if(index >= devices_fd.len) {
+    if (index >= devices_fd.len) {
         return true;
     }
 
-    int fd = *(int*) vec_get(&devices_fd, index);
+    int                fd    = *(int *)vec_get(&devices_fd, index);
     struct input_event event = {0};
 
     event.type  = type;
@@ -215,10 +216,9 @@ void device_handle_report(MessageDeviceReport *report) {
         return;
     }
 
-    MessageDeviceInfo * info = vec_get(&devices_info, report->index);
+    MessageDeviceInfo *info = vec_get(&devices_info, report->index);
 
-    if (report->abs_count != info->abs_count || report->rel_count != info->rel_count ||
-        report->key_count != info->key_count) {
+    if (report->abs_count != info->abs_count || report->rel_count != info->rel_count || report->key_count != info->key_count) {
         printf("CLIENT: Report doesn't match with device info\n");
         return;
     }

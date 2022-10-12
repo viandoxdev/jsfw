@@ -1,5 +1,6 @@
 #include "vec.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,7 +41,7 @@ static inline void vec_grow(Vec *v, size_t cap) {
 
 void vec_push(Vec *v, void *data) {
     vec_grow(v, v->len + 1);
-    memcpy((u_int8_t *)v->data + v->stride * v->len++, data, v->stride);
+    memcpy((uint8_t *)v->data + v->stride * v->len++, data, v->stride);
 }
 
 void vec_pop(Vec *v, void *data) {
@@ -103,7 +104,7 @@ void vec_extend(Vec *v, void *data, size_t len) {
         return;
     }
     vec_grow(v, v->len + len);
-    memcpy((uint8_t*)v->data + v->stride * v->len, data, v->stride * len);
+    memcpy((uint8_t *)v->data + v->stride * v->len, data, v->stride * len);
     v->len += len;
 }
 

@@ -55,8 +55,7 @@ static int json_parse_value(const char **buf, const char *buf_end, uint8_t **res
                             const uint8_t *dst_end); // Declaration for recursion
 
 // *dst must be 8 aligned
-static inline int json_parse_string(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                                    const uint8_t *dst_end) {
+static inline int json_parse_string(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Ensure enough space for the header
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -130,8 +129,8 @@ static inline int json_parse_string(const char **buf, const char *buf_end, uint8
                     }
 
                     *(*dst)++ = 0xE0 | (un_codepoint >> 12 & 0x0F);
-                    *(*dst)++ = 0x80 | (un_codepoint >>  6 & 0x3F);
-                    *(*dst)++ = 0x80 | (un_codepoint >>  0 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 6 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 0 & 0x3F);
                     header->len += 3;
                 } else if (un_codepoint <= 0x10ffff) { // 4 byte codepoint
                     if (*dst + 4 >= dst_end) {
@@ -140,8 +139,8 @@ static inline int json_parse_string(const char **buf, const char *buf_end, uint8
 
                     *(*dst)++ = 0xF0 | (un_codepoint >> 18 & 0x07);
                     *(*dst)++ = 0x80 | (un_codepoint >> 12 & 0x3F);
-                    *(*dst)++ = 0x80 | (un_codepoint >>  6 & 0x3F);
-                    *(*dst)++ = 0x80 | (un_codepoint >>  0 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 6 & 0x3F);
+                    *(*dst)++ = 0x80 | (un_codepoint >> 0 & 0x3F);
                     header->len += 4;
                 } else { // Illegal codepoint
                     return set_jerrno(StringBadUnicode);
@@ -208,9 +207,8 @@ static inline int json_parse_string(const char **buf, const char *buf_end, uint8
                 (*buf)++;
 
                 return 0;
-            } else if ((c < ' ' && c != '\t') ||
-                       c == 0x7f) { // Illegal characters, technically tab isn't allowed either
-                                    // but it felt weird so I added it
+            } else if ((c < ' ' && c != '\t') || c == 0x7f) { // Illegal characters, technically tab isn't allowed either
+                                                              // but it felt weird so I added it
                 jerrno = StringBadChar;
                 return -1;
             }
@@ -229,8 +227,7 @@ static inline int json_parse_string(const char **buf, const char *buf_end, uint8
 }
 
 // *dst must be 8 aligned
-static int json_parse_number(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                             const uint8_t *dst_end) {
+static int json_parse_number(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Ensure enough space for header and value
     if (*dst + sizeof(JSONHeader) + sizeof(double) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -349,8 +346,7 @@ static int json_parse_number(const char **buf, const char *buf_end, uint8_t **re
 }
 
 // *dst must be 8 aligned
-static int json_parse_boolean(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                              const uint8_t *dst_end) {
+static int json_parse_boolean(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Ensure enough space for header and value
     if (*dst + sizeof(JSONHeader) + 8 >= dst_end) { // 8: sizeof(uint64_t)
         return set_jerrno(DstOverflow);
@@ -389,8 +385,7 @@ static int json_parse_boolean(const char **buf, const char *buf_end, uint8_t **r
 }
 
 // *dst must be 8 aligned
-static int json_parse_null(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                           const uint8_t *dst_end) {
+static int json_parse_null(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Ensure enough size for the header (no value)
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -415,8 +410,7 @@ static int json_parse_null(const char **buf, const char *buf_end, uint8_t **rest
 }
 
 // *dst must be 8 aligned
-static int json_parse_array(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                            const uint8_t *dst_end) {
+static int json_parse_array(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Ensure enough space for the header
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -477,8 +471,7 @@ static int json_parse_array(const char **buf, const char *buf_end, uint8_t **res
 }
 
 // *dst must be 8 aligned
-static int json_parse_object(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                             const uint8_t *dst_end) {
+static int json_parse_object(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     // Esnure enough space for the header
     if (*dst + sizeof(JSONHeader) >= dst_end) {
         return set_jerrno(DstOverflow);
@@ -557,8 +550,7 @@ static int json_parse_object(const char **buf, const char *buf_end, uint8_t **re
 }
 
 // *dst must be 8 aligned
-static int json_parse_value(const char **buf, const char *buf_end, uint8_t **restrict dst,
-                            const uint8_t *dst_end) {
+static int json_parse_value(const char **buf, const char *buf_end, uint8_t **restrict dst, const uint8_t *dst_end) {
     for (; *buf < buf_end; (*buf)++) {
         // Ignore initial whitespaces
         if (is_whitespace(**buf))
@@ -714,7 +706,7 @@ static inline bool ends_with(const char *str, const char *pat) {
 static void json_adapt_set_defaults(const JSONAdapter *adapter, void *ptr) {
     if (!is_primitive(adapter)) {
         for (int i = 0; i < adapter->prop_count; i++) {
-            uint8_t *p = (uint8_t*)ptr + adapter->props[i].offset;
+            uint8_t *p = (uint8_t *)ptr + adapter->props[i].offset;
 
             if (ends_with(adapter->props[i].path, "[]")) {
                 *(size_t *)(p + sizeof(void *)) = 0;
@@ -736,8 +728,8 @@ static void json_adapt_set_defaults(const JSONAdapter *adapter, void *ptr) {
 //   path_buffer: points to the begining of the path buffer
 //   full_path: points to the "current" path
 //   path: points to the end of the current path (most of the times)
-static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr, char *path_buffer,
-                            char *full_path, char *path) {
+static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr, char *path_buffer, char *full_path,
+                            char *path) {
     JSONHeader *header = (JSONHeader *)*buf;
 
     if (is_primitive(adapter)) {
@@ -789,8 +781,8 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
 
     for (int i = 0; i < adapter->prop_count; i++) {
         if (strcmp(adapter->props[i].path, full_path) == 0) {
-            uint8_t  *p    = (uint8_t*)ptr + adapter->props[i].offset;
-            size_t size = adapter->props[i].type->size;
+            uint8_t *p    = (uint8_t *)ptr + adapter->props[i].offset;
+            size_t   size = adapter->props[i].type->size;
 
             if (header->type == Array) {
                 uint8_t *array_buf = *buf + sizeof(JSONHeader);
@@ -807,8 +799,7 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
                 for (size_t index = 0; index < len; index++) {
                     path[0] = '.';
                     path[1] = '\0';
-                    json_adapt_priv(&array_buf, adapter->props[i].type, array_ptr + index * size, path_buffer,
-                                    path, path);
+                    json_adapt_priv(&array_buf, adapter->props[i].type, array_ptr + index * size, path_buffer, path, path);
                     path[0] = '\0';
                 }
 

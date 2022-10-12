@@ -5,6 +5,7 @@
 #include "server.h"
 
 #include <linux/input-event-codes.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 // Unique identifier for devices (provided by linux), May be the mac address

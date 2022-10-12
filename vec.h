@@ -1,16 +1,16 @@
 // vi:ft=c
 #ifndef VEC_H_
 #define VEC_H_
-#include <unistd.h>
 #include <stdint.h>
+#include <unistd.h>
 
 #define vec_of(type) vec_new(sizeof(type))
 
 typedef struct {
     uint8_t *data;
-    size_t cap;
-    size_t len;
-    size_t stride;
+    size_t   cap;
+    size_t   len;
+    size_t   stride;
 } Vec;
 
 // Create a new vector

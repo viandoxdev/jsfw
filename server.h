@@ -14,7 +14,7 @@ typedef struct {
     int32_t product;
     bool    js;
     // NULL means no filter
-    char * name;
+    char *name;
 } ControllerFilter;
 
 typedef struct {

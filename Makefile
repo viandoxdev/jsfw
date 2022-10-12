@@ -1,9 +1,9 @@
 Q=@
-CC=clang
+CC=gcc
 
 GCCCFLAGS=-Wno-format-truncation 
-CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE -fsanitize=undefined
-LDFLAGS=-lm -fsanitize=undefined
+CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
+LDFLAGS=-lm
 
 BUILD_DIR=./objects
 BIN=jsfw

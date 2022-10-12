@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifndef __has_builtin
 #define __has_builtin(_) 0
@@ -169,12 +170,12 @@ void tsf_hex_to_color(void *arg, void *ptr) {
     free(s);
 }
 
-void tsf_num_to_u8_clamp(void * arg, void *ptr) {
-    double n = *(double*)arg;
-    *(uint8_t*)ptr = n > 255.0 ? 255.0 : n < 0.0 ? 0.0 : n;
+void tsf_num_to_u8_clamp(void *arg, void *ptr) {
+    double n        = *(double *)arg;
+    *(uint8_t *)ptr = n > 255.0 ? 255.0 : n < 0.0 ? 0.0 : n;
 }
 
-void tsf_num_to_int(void * arg, void *ptr) {
-    double n = *(double*)arg;
-    *(int*)ptr = n;
+void tsf_num_to_int(void *arg, void *ptr) {
+    double n    = *(double *)arg;
+    *(int *)ptr = n;
 }

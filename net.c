@@ -2,19 +2,19 @@
 
 #include "util.h"
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-
 
 // Deserialize the message in buf, buf must be at least 4 aligned. Returns -1 on error, otherwise returns 0
 // and writes result to dst
 int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
     {
-        if(len <= MAGIC_SIZE) {
+        if (len <= MAGIC_SIZE) {
             return -1;
         }
 
-        if(*(MAGIC_TYPE*)buf != MAGIC_BEG) {
+        if (*(MAGIC_TYPE *)buf != MAGIC_BEG) {
             printf("NET:     No magic in message\n");
             return -1;
         }
@@ -26,9 +26,9 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
     if (len-- < 1)
         return -1;
     // This ensures that only a byte is read instead of a full enum value
-    uint8_t        code_byte = buf[0];
-    MessageCode    code      = (MessageCode)code_byte;
-    uint32_t size = 0;
+    uint8_t     code_byte = buf[0];
+    MessageCode code      = (MessageCode)code_byte;
+    uint32_t    size      = 0;
 
     uint16_t abs, rel, key, index, *buf16;
 
@@ -129,7 +129,7 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
         dst->controller_state.big_rumble   = buf[8];
         dst->controller_state.flash_on     = buf[9];
         dst->controller_state.flash_off    = buf[10];
-        size = MSS_CONTROLLER_STATE + 1;
+        size                               = MSS_CONTROLLER_STATE + 1;
         buf += size;
         break;
     case Request: {
@@ -170,7 +170,7 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
         }
 
         dst->request.requests = tags;
-        size = expected_len + 1;
+        size                  = expected_len + 1;
         break;
     }
     case DeviceDestroy:
@@ -179,18 +179,18 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
 
         dst->code          = code;
         dst->destroy.index = *(uint16_t *)(buf + 2);
-        size = MSS_DESTROY + 1;
+        size               = MSS_DESTROY + 1;
         buf += size;
         break;
     default:
         return -1;
     }
 
-    if(size + MAGIC_SIZE > len + 1) {
+    if (size + MAGIC_SIZE > len + 1) {
         return -1;
     }
 
-    if(*(MAGIC_TYPE*)buf != MAGIC_END) {
+    if (*(MAGIC_TYPE *)buf != MAGIC_END) {
         printf("NET:     Magic not found\n");
         return -1;
     }
@@ -204,7 +204,7 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
     if (len < MAGIC_SIZE * 2 + 1)
         return -1;
 
-    *(MAGIC_TYPE*)buf = MAGIC_BEG;
+    *(MAGIC_TYPE *)buf = MAGIC_BEG;
     buf += MAGIC_SIZE;
     len -= MAGIC_SIZE + 1;
 
@@ -305,7 +305,7 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         buf[8]  = msg->controller_state.big_rumble;
         buf[9]  = msg->controller_state.flash_on;
         buf[10] = msg->controller_state.flash_off;
-        size = MSS_CONTROLLER_STATE + 1;
+        size    = MSS_CONTROLLER_STATE + 1;
         buf += size;
         break;
     case Request: {
@@ -347,7 +347,7 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         buf[0] = (uint8_t)msg->code;
 
         *(uint16_t *)(buf + 2) = msg->controller_state.index;
-        size = MSS_DESTROY + 1;
+        size                   = MSS_DESTROY + 1;
         buf += size;
         break;
     default:
@@ -355,11 +355,11 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         return -1;
     }
 
-    if(size + MAGIC_SIZE > len) {
+    if (size + MAGIC_SIZE > len) {
         return -1;
     }
 
-    *(MAGIC_TYPE*)buf = MAGIC_END;
+    *(MAGIC_TYPE *)buf = MAGIC_END;
 
     return size + MAGIC_SIZE * 2;
 }
@@ -373,7 +373,7 @@ void msg_free(Message *msg) {
     }
 }
 
-void print_message_buffer(const uint8_t * buf, int len) {
+void print_message_buffer(const uint8_t *buf, int len) {
     bool last_beg = false;
     for (int i = 0; i < len; i++) {
         if (i + MAGIC_SIZE <= len) {

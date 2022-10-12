@@ -15,7 +15,7 @@ typedef struct {
 
 typedef struct {
     ClientController *controllers;
-    size_t                  controller_count;
+    size_t            controller_count;
 
     char           *fifo_path;
     struct timespec retry_delay;

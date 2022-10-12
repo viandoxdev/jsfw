@@ -1,6 +1,8 @@
 // vi:ft=c
 #ifndef NET_H_
 #define NET_H_
+#include "util.h"
+
 #include <linux/input-event-codes.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -104,6 +106,6 @@ typedef union {
 int  msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst);
 int  msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg);
 void msg_free(Message *msg);
-void print_message_buffer(const uint8_t * buf, int len);
+void print_message_buffer(const uint8_t *buf, int len);
 
 #endif

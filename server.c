@@ -9,12 +9,12 @@
 
 #include <linux/input-event-codes.h>
 #include <linux/input.h>
-#include <math.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -114,7 +114,7 @@ void *device_thread(void *args_) {
     while (true) {
         *args->controller = NULL;
         Controller *ctr   = get_device(args->tag, &args->conn->closed);
-        if(ctr == NULL) {
+        if (ctr == NULL) {
             break;
         }
         *args->controller = ctr;
