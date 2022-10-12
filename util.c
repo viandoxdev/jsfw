@@ -64,10 +64,10 @@ void tsf_numsec_to_intms(void *arg, void *ptr) {
     *(uint32_t *)ptr = seconds * 1000;
 }
 
-void tsf_strmac_to_u64(void *arg, void *ptr) {
+void tsf_uniq_to_u64(void *arg, void *ptr) {
     char *s = *(char **)arg;
     if (strnlen(s, 18) != 17) {
-        printf("JSON: wrong length for mac address, expected 'xx:xx:xx:xx:xx:xx'\n");
+        printf("JSON: wrong length for uniq, expected 'xx:xx:xx:xx:xx:xx'\n");
         free(s);
         return;
     }
@@ -85,7 +85,7 @@ void tsf_strmac_to_u64(void *arg, void *ptr) {
         else if (c == ':')
             continue;
         else {
-            printf("JSON: unexpected character '%c' in mac address at position %i (%s)\n", c, i, s);
+            printf("JSON: unexpected character '%c' in uniq at position %i (%s)\n", c, i, s);
             free(s);
             return;
         }

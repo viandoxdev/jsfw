@@ -25,6 +25,7 @@ typedef struct {
     int               event;
     int               hidraw;
     uniq_t            uniq;
+    uint64_t          id;
     char             *name;
     DeviceMap         mapping;
     MessageDeviceInfo device_info;
@@ -38,7 +39,7 @@ typedef struct {
 void       *hid_thread(void *arg);
 void        return_device(Controller *c);
 void        forget_device(Controller *c);
-Controller *get_device(char *tag);
+Controller *get_device(char *tag, bool *stop);
 void        apply_controller_state(Controller *c, MessageControllerState *state);
 
 #endif

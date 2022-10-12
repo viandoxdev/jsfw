@@ -6,7 +6,7 @@
 
 #define INIT_CAP 8
 
-static void handle_alloc_error() {
+static void handle_alloc_error(void) {
     printf("Error when allocating memory.\n");
     exit(2);
 }

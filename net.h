@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define MAGIC_TYPE uint32_t
+#define MAGIC_SIZE sizeof(MAGIC_TYPE)
+static const MAGIC_TYPE MAGIC_BEG = 0xDEADCAFE;
+static const MAGIC_TYPE MAGIC_END = 0xCAFEDEAD;
+
 typedef enum {
     NoMessage       = 0,
     DeviceInfo      = 1,
@@ -55,7 +60,7 @@ typedef struct {
     uint32_t rel[REL_CNT];
     uint8_t  key[KEY_CNT];
 } MessageDeviceReport;
-#define MSS_DEVICE_REPORT(abs, rel, key) (8 + abs * 4 + rel * 4 + key * 1 + 1)
+#define MSS_DEVICE_REPORT(abs, rel, key) (11 + abs * 4 + rel * 4 + align_4(key))
 
 // 1 aligned
 typedef struct {
@@ -99,5 +104,6 @@ typedef union {
 int  msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst);
 int  msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg);
 void msg_free(Message *msg);
+void print_message_buffer(const uint8_t * buf, int len);
 
 #endif

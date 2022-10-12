@@ -94,7 +94,7 @@ static const JSONAdapter ConfigAdapter = {
     .size       = sizeof(ClientConfig),
 };
 
-void destroy_devices() {
+void destroy_devices(void) {
     for (int i = 0; i < config.controller_count; i++) {
         int                fd   = *(int *)vec_get(&devices_fd, i);
         MessageDeviceInfo *info = vec_get(&devices_info, i);
@@ -245,7 +245,7 @@ void device_handle_report(MessageDeviceReport *report) {
     device_emit(report->index, EV_SYN, 0, 0);
 }
 
-void setup_devices() {
+void setup_devices(void) {
     devices_fd   = vec_of(int);
     devices_info = vec_of(MessageDeviceInfo);
 
@@ -264,10 +264,10 @@ void setup_devices() {
     }
 }
 
-void setup_fifo();
+void setup_fifo(void);
 
 // (Re)Open the fifo
-void open_fifo() {
+void open_fifo(void) {
     close(fifo);
     fifo = open(config.fifo_path, O_RDONLY | O_NONBLOCK);
     if (fifo < 0 && fifo_attempt == 0) {
@@ -281,7 +281,7 @@ void open_fifo() {
 }
 
 // Ensure the fifo exists and opens it (also setup poll_fd)
-void setup_fifo() {
+void setup_fifo(void) {
     mode_t prev = umask(0);
     mkfifo(config.fifo_path, 0666);
     umask(prev);
@@ -293,7 +293,7 @@ void setup_fifo() {
 }
 
 // (Re)Connect to the server
-void connect_server() {
+void connect_server(void) {
     while (true) {
         if (sock > 0) {
             // Close previous connection
@@ -319,7 +319,7 @@ void connect_server() {
         socket_poll->fd = sock;
         printf("CLIENT: Connected !\n");
 
-        uint8_t buf[2048] __attribute__((aligned(4)));
+        uint8_t buf[2048] __attribute__((aligned(4))) = {0};
 
         int len = msg_serialize(buf, 2048, (Message *)&device_request);
         if (len > 0) {
@@ -350,7 +350,7 @@ void setup_server(char *address, uint16_t port) {
     connect_server();
 }
 
-void build_device_request() {
+void build_device_request(void) {
     char **tags = malloc(config.controller_count * sizeof(char *));
     for (int i = 0; i < config.controller_count; i++) {
         tags[i] = config.controllers[i].tag;
@@ -387,8 +387,8 @@ void client_run(char *address, uint16_t port, char *config_path) {
 
     setup_fifo();
     build_device_request();
-    setup_server(address, port);
     setup_devices();
+    setup_server(address, port);
 
     uint8_t buf[2048] __attribute__((aligned(4)));
     uint8_t json_buf[2048] __attribute__((aligned(8)));
@@ -429,7 +429,7 @@ void client_run(char *address, uint16_t port, char *config_path) {
 
         // A broken or closed socket produces a POLLIN event, so we check for error on the recv
         if (socket_poll->revents & POLLIN) {
-            int len = recv(sock, buf, 2048, 0);
+            int len = recv(sock, buf, 2048, MSG_PEEK);
             if (len <= 0) {
                 printf("CLIENT: Lost connection to server, reconnecting\n");
                 connect_server();
@@ -438,9 +438,11 @@ void client_run(char *address, uint16_t port, char *config_path) {
                 continue;
             }
 
+            int msg_len = msg_deserialize(buf, len, &message);
             // We've got data from the server
-            if (msg_deserialize(buf, len, &message) != 0) {
-                printf("CLIENT: Couldn't parse message (code: %d, len: %d)\n", buf[0], len);
+            if (msg_len < 0) {
+                recv(sock, buf, 2048, 0);
+                printf("CLIENT: Couldn't parse message (code: %d, len: %d)\n", buf[4], len);
 
                 int l = len > 100 ? 100 : len;
                 for (int i = 0; i < l; i++) {
@@ -454,6 +456,8 @@ void client_run(char *address, uint16_t port, char *config_path) {
                 printf("\n");
                 continue;
             }
+
+            recv(sock, buf, msg_len, 0);
 
             if (message.code == DeviceInfo) {
                 if (device_exists(message.device_info.index)) {

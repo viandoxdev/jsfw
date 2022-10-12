@@ -1,7 +1,11 @@
 Q=@
-CC=gcc
-CFLAGS=-std=c11 -pedantic -g -Wall -Wno-format-truncation -pthread -lm -D_GNU_SOURCE
-LDFLAGS=-lm
+CC=clang
+
+GCCCFLAGS=-Wno-format-truncation 
+CLANGCFLAGS=-fsanitize=memory
+CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
+LDFLAGS=-lm -fsanitize=memory
+
 BUILD_DIR=./objects
 BIN=jsfw
 
@@ -10,6 +14,14 @@ RUNARGS=server 7776 ./server_config.json
 SOURCES=$(wildcard *.c)
 
 OBJECTS:=$(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
+
+ifeq ($(CC),gcc)
+	CFLAGS:=$(CFLAGS) $(GCCCFLAGS)
+endif
+
+ifeq ($(CC),clang)
+	CFLAGS:=$(CFLAGS) $(CLANGCFLAGS)
+endif
 
 .PHONY: run
 run: $(BIN)

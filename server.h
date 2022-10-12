@@ -6,13 +6,15 @@
 #include <time.h>
 
 typedef struct {
-    // the 0 mac_address represents no filter
-    uint64_t mac_address;
+    // the 0 uniq represents no filter
+    uint64_t uniq;
     // negative values means no filter
     int32_t vendor;
     // negative values means no filter
     int32_t product;
     bool    js;
+    // NULL means no filter
+    char * name;
 } ControllerFilter;
 
 typedef struct {

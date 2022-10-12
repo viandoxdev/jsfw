@@ -1,18 +1,12 @@
 {
     "controllers": [
         {
-            "tag": "Admin",
-            "vendor": "054c",
-            "product": "09cc",
-            "name": "JSFW PS4 Controller (Admin)"
-        },
-        {
-            "tag": "User",
-            "vendor": "6942",
-            "product": "1337",
-            "name": "JSFW PS4 Controller (User)"
+            "tag": "Mouse",
+            "vendor": "6969",
+            "product": "0001",
+            "name": "JSFW Mouse"
         }
     ],
     "fifo_path": "/tmp/jsfw_fifo_2",
-    "retry_delay": 2.5
+    "retry_delay": 1
 }

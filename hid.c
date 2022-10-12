@@ -18,7 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
-// List of uniq of the currently known devices
+// List of ids of the currently known devices
 static Vec known_devices;
 // Queue of available devices, devices that can only be given to one client
 static Vec available_devices;
@@ -119,7 +119,7 @@ void setup_device(PhysicalDevice *dev) {
     }
 }
 
-bool filter_event(int fd, char *event, ControllerFilter *filter) {
+bool filter_event(int fd, char *event, ControllerFilter *filter, uniq_t uniq) {
     if (filter->js) {
         char device_path[64];
         snprintf(device_path, 64, "/sys/class/input/%s/device", event);
@@ -142,6 +142,18 @@ bool filter_event(int fd, char *event, ControllerFilter *filter) {
         }
     }
 
+    if (filter->name != NULL) {
+        char name[256] = {0};
+        ioctl(fd, EVIOCGNAME(256), name);
+        if (strcmp(name, filter->name) != 0) {
+            return false;
+        }
+    }
+
+    if (filter->uniq > 0 && uniq != filter->uniq) {
+        return false;
+    }
+
     struct input_id ids;
     ioctl(fd, EVIOCGID, &ids);
 
@@ -154,18 +166,25 @@ bool filter_event(int fd, char *event, ControllerFilter *filter) {
 }
 
 // Initialize vectors for polling
-void poll_devices_init() {
+void poll_devices_init(void) {
     known_devices     = vec_of(Controller);
     cloneable_devices = vec_of(Controller *);
     available_devices = vec_of(Controller *);
 }
 
 // Block to get a device, this is thread safe
-Controller *get_device(char *tag) {
+// stop: additional condition to check before doing anything,
+// if the condition is ever found to be true the function will return immediately with a NULL pointer.
+Controller *get_device(char *tag, bool *stop) {
     // Check if we can get one right away
     pthread_mutex_lock(&devices_mutex);
 
     while (1) {
+        if (*stop) {
+            pthread_mutex_unlock(&devices_mutex);
+            return NULL;
+        }
+
         for (int i = 0; i < available_devices.len; i++) {
             Controller *c = *(Controller **)vec_get(&available_devices, i);
             if (strcmp(c->ctr.tag, tag) == 0) {
@@ -210,7 +229,7 @@ void forget_device(Controller *c) {
         pthread_mutex_lock(&devices_mutex);
         for (int i = 0; i < cloneable_devices.len; i++) {
             Controller *d = *(Controller **)vec_get(&cloneable_devices, i);
-            if (d->dev.uniq == c->dev.uniq) {
+            if (d->dev.id == c->dev.id) {
                 vec_remove(&cloneable_devices, i, NULL);
                 break;
             }
@@ -220,10 +239,10 @@ void forget_device(Controller *c) {
 
     // Free the name if it was allocated
     if (c->dev.name != NULL && c->dev.name != DEVICE_DEFAULT_NAME) {
-        printf("HID:     Forgetting device '%s' (%012lx)\n", c->dev.name, c->dev.uniq);
+        printf("HID:     Forgetting device '%s' (%016lx)\n", c->dev.name, c->dev.id);
         free(c->dev.name);
     } else {
-        printf("HID:     Forgetting device %012lx\n", c->dev.uniq);
+        printf("HID:     Forgetting device %016lx\n", c->dev.id);
     }
 
     // try to close the file descriptor, they may be already closed if the device was unpugged.
@@ -234,7 +253,7 @@ void forget_device(Controller *c) {
     pthread_mutex_lock(&known_devices_mutex);
     for (int i = 0; i < known_devices.len; i++) {
         Controller *d = vec_get(&known_devices, i);
-        if (d->dev.uniq == c->dev.uniq) {
+        if (d->dev.id == c->dev.id) {
             vec_remove(&known_devices, i, NULL);
             break;
         }
@@ -243,7 +262,7 @@ void forget_device(Controller *c) {
 }
 
 // Find all available devices and pick up on new ones
-void poll_devices() {
+void poll_devices(void) {
     // loop over all entries of /sys/class/input
     DIR           *input_dir = opendir("/sys/class/input");
     struct dirent *input;
@@ -256,6 +275,7 @@ void poll_devices() {
 
         PhysicalDevice dev;
         dev.hidraw = -1;
+        dev.uniq   = 0;
 
         // Open /dev/input/eventXX
         {
@@ -280,6 +300,14 @@ void poll_devices() {
             }
         }
 
+        // Try to get uniq, drop device if we can't
+        {
+            char uniq_str[17] = {0};
+
+            ioctl(dev.event, EVIOCGUNIQ(17), uniq_str);
+            dev.uniq = parse_uniq(uniq_str);
+        }
+
         // Used for linear searches
         bool found;
 
@@ -290,7 +318,7 @@ void poll_devices() {
             for (int i = 0; i < config->controller_count; i++) {
                 ctr = &config->controllers[i];
 
-                if (filter_event(dev.event, input->d_name, &ctr->filter)) {
+                if (filter_event(dev.event, input->d_name, &ctr->filter, dev.uniq)) {
                     found = true;
                     break;
                 }
@@ -301,17 +329,11 @@ void poll_devices() {
             }
         }
 
-        // Try to get uniq, drop device if we can't
+        // Get the id
         {
-            char uniq_str[17] = {0};
-
-            ioctl(dev.event, EVIOCGUNIQ(17), uniq_str);
-            dev.uniq = parse_uniq(uniq_str);
-
-            // If we couldn't parse the uniq (this assumes uniq can't be zero, which is probably alright)
-            if (dev.uniq == 0) {
-                goto skip;
-            }
+            struct input_id id;
+            ioctl(dev.event, EVIOCGID, &id);
+            dev.id = *(uint64_t *)&id;
         }
 
         // Check if we already know of this device
@@ -321,7 +343,7 @@ void poll_devices() {
             pthread_mutex_lock(&known_devices_mutex);
             for (int i = 0; i < known_devices.len; i++) {
                 Controller *c = vec_get(&known_devices, i);
-                if (c->dev.uniq == dev.uniq) {
+                if (c->dev.id == dev.id) {
                     found = true;
                     break;
                 }
@@ -390,7 +412,7 @@ void poll_devices() {
             // Pointer to the device in known_devices
             Controller *p = vec_get(&known_devices, index);
 
-            printf("HID:     New device, %s [%s] (%s: %012lx)\n", name, ctr->tag, input->d_name, dev.uniq);
+            printf("HID:     New device, %s [%s] (%s: %016lx)\n", name, ctr->tag, input->d_name, dev.id);
 
             if (ctr->duplicate) {
                 pthread_mutex_lock(&devices_mutex);
@@ -419,11 +441,11 @@ void poll_devices() {
 // "Execute" a MessageControllerState: set the led color, rumble and flash using the hidraw interface (Dualshock 4 only)
 void apply_controller_state(Controller *c, MessageControllerState *state) {
     if (c->ctr.ps4_hidraw && c->dev.hidraw < 0) {
-        printf("HID:     Trying to apply controller state on incompatible device (%012lx)\n", c->dev.uniq);
+        printf("HID:     Trying to apply controller state on incompatible device (%016lx)\n", c->dev.id);
         return;
     }
 
-    printf("HID:     (%012lx) Controller state: #%02x%02x%02x flash: (%d, %d) rumble: (%d, %d)\n", c->dev.uniq, state->led[0],
+    printf("HID:     (%016lx) Controller state: #%02x%02x%02x flash: (%d, %d) rumble: (%d, %d)\n", c->dev.id, state->led[0],
            state->led[1], state->led[2], state->flash_on, state->flash_off, state->small_rumble, state->big_rumble);
 
     uint8_t buf[32] = {0x05, 0xff, 0x00, 0x00};

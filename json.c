@@ -16,11 +16,11 @@ static JSONError jerrno = NoError;
 static size_t jerr_index = 0;
 
 // Get a string explaining the last json parsing error
-const char *json_strerr() { return JSONErrorMessage[jerrno]; }
+const char *json_strerr(void) { return JSONErrorMessage[jerrno]; }
 // Get the code of the last json parsing error
-JSONError json_errno() { return jerrno; }
+JSONError json_errno(void) { return jerrno; }
 // Get the location of the last json parsing error
-size_t json_errloc() { return jerr_index; }
+size_t json_errloc(void) { return jerr_index; }
 
 static inline bool is_primitive(const JSONAdapter *adapter) { return adapter->props == NULL; }
 

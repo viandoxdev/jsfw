@@ -26,6 +26,7 @@
 struct Connection {
     int      socket;
     uint32_t id;
+    bool     closed;
 };
 
 struct DeviceThreadArgs {
@@ -39,10 +40,11 @@ static void default_timespec(void *ptr) { *(struct timespec *)ptr = POLL_DEVICE_
 static void default_request_timeout(void *ptr) { *(uint32_t *)ptr = REQUEST_TIMEOUT; }
 
 const JSONPropertyAdapter FilterAdapterProps[] = {
-    {".mac_address", &StringAdapter,  offsetof(ControllerFilter, mac_address), default_to_zero_u64,         tsf_strmac_to_u64},
-    {".vendor",      &StringAdapter,  offsetof(ControllerFilter, vendor),      default_to_negative_one_i32, tsf_hex_to_i32   },
-    {".product",     &StringAdapter,  offsetof(ControllerFilter, product),     default_to_negative_one_i32, tsf_hex_to_i32   },
-    {".js",          &BooleanAdapter, offsetof(ControllerFilter, js),          default_to_false,            NULL             },
+    {".uniq",    &StringAdapter,  offsetof(ControllerFilter, uniq),    default_to_zero_u64,         tsf_uniq_to_u64},
+    {".vendor",  &StringAdapter,  offsetof(ControllerFilter, vendor),  default_to_negative_one_i32, tsf_hex_to_i32 },
+    {".product", &StringAdapter,  offsetof(ControllerFilter, product), default_to_negative_one_i32, tsf_hex_to_i32 },
+    {".js",      &BooleanAdapter, offsetof(ControllerFilter, js),      default_to_false,            NULL           },
+    {".name",    &StringAdapter,  offsetof(ControllerFilter, name),    default_to_null,             NULL           },
 };
 const JSONAdapter FilterAdapter = {
     .props      = FilterAdapterProps,
@@ -80,12 +82,16 @@ static sigset_t      empty_sigset;
 #define TRAP(sig, handler)                                                                                                       \
     if (sigaction(sig, &(struct sigaction){.sa_handler = handler, .sa_mask = empty_sigset, .sa_flags = 0}, NULL) != 0)           \
     printf("SERVER:  can't trap " #sig ".\n")
+#define TRAP_IGN(sig)                                                                                                            \
+    if (sigaction(sig, &(struct sigaction){{SIG_IGN}}, NULL) != 0)                                                               \
+    printf("SERVER:  can't ignore " #sig ".\n")
 
-void device_thread_exit() {
+void device_thread_exit(int _sig) {
     struct DeviceThreadArgs *args = pthread_getspecific(device_args_key);
+    printf("CONN(%d): [%d] exiting\n", args->conn->id, args->index);
 
-    Controller * ctr = *args->controller;
-    if(ctr != NULL) {
+    Controller *ctr = *args->controller;
+    if (ctr != NULL) {
         return_device(ctr);
     }
 
@@ -99,6 +105,7 @@ void *device_thread(void *args_) {
 
     pthread_setspecific(device_args_key, args);
 
+    TRAP_IGN(SIGPIPE);
     TRAP(SIGTERM, device_thread_exit);
 
     uint8_t           buf[2048] __attribute__((aligned(4))) = {0};
@@ -106,13 +113,16 @@ void *device_thread(void *args_) {
 
     while (true) {
         *args->controller = NULL;
-        Controller *ctr   = get_device(args->tag);
+        Controller *ctr   = get_device(args->tag, &args->conn->closed);
+        if(ctr == NULL) {
+            break;
+        }
         *args->controller = ctr;
         dev_info          = ctr->dev.device_info;
         dev_info.index    = args->index;
 
-        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%012lx)\n", args->conn->id, args->index, args->tag,
-               ctr->dev.name, ctr->dev.uniq);
+        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%016lx)\n", args->conn->id, args->index, args->tag,
+               ctr->dev.name, ctr->dev.id);
 
         // Send over device info
         {
@@ -129,6 +139,7 @@ void *device_thread(void *args_) {
         report.abs_count = ctr->dev.device_info.abs_count;
         report.rel_count = ctr->dev.device_info.rel_count;
         report.key_count = ctr->dev.device_info.key_count;
+        report.index     = args->index;
 
         while (true) {
             struct input_event event;
@@ -188,7 +199,7 @@ void *device_thread(void *args_) {
         // Send device destroy message
         {
             MessageDestroy dstr;
-            dstr.code = DeviceDestroy;
+            dstr.code  = DeviceDestroy;
             dstr.index = args->index;
 
             int len = msg_serialize(buf, 2048, (Message *)&dstr);
@@ -199,7 +210,7 @@ void *device_thread(void *args_) {
         }
     }
 
-    device_thread_exit();
+    device_thread_exit(SIGTERM);
     return NULL;
 }
 
@@ -255,12 +266,24 @@ void *server_handle_conn(void *args_) {
         if (len <= 0) {
             closing_message = "Lost peer (from recv)";
             goto conn_end;
+        } else if (len > 1 + MAGIC_SIZE * 2) {
+            printf("CONN(%d):  Got message: ", args->id);
+            printf("\n");
+        } else {
+            printf("CONN(%d):  Malformed message\n", args->id);
         }
 
         // Parse message
         Message msg;
-        if (msg_deserialize(buf, len, &msg) != 0) {
-            printf("CONN(%d): Couldn't parse message.\n", args->id);
+        int     msg_len = msg_deserialize(buf, len, &msg);
+        if (msg_len < 0) {
+            if (len > 1 + MAGIC_SIZE * 2) {
+                printf("CONN(%d): Couldn't parse message: ", args->id);
+                print_message_buffer(buf, len);
+                printf("\n");
+            } else {
+                printf("CONN(%d): Couldn't parse message", args->id);
+            }
             continue;
         }
 
@@ -315,18 +338,19 @@ void *server_handle_conn(void *args_) {
 conn_end:
     shutdown(args->socket, SHUT_RDWR);
     printf("CONN(%u): connection closed (%s)\n", args->id, closing_message);
-    free(args);
+    args->closed = true;
     for (int i = 0; i < device_threads.len; i++) {
         pthread_t thread = *(pthread_t *)vec_get(&device_threads, i);
         pthread_kill(thread, SIGTERM);
         pthread_join(thread, NULL);
     }
+    free(args);
     return NULL;
 }
 
 static int sockfd;
 
-void clean_exit() {
+void clean_exit(int _sig) {
     printf("\rSERVER:  exiting\n");
     close(sockfd);
     exit(0);
@@ -405,6 +429,7 @@ void server_run(uint16_t port, char *config_path) {
         struct Connection conn;
 
         conn.socket = accept(sock, &con_addr, &con_len);
+        conn.closed = false;
 
         if (conn.socket >= 0) {
             printf("SERVER:  got connection\n");

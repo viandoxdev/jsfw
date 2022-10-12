@@ -60,9 +60,9 @@ typedef struct JSONAdapter JSONAdapter;
 void        json_adapt(uint8_t *buf, const JSONAdapter *adapter, void *ptr);
 int         json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len);
 void        json_print_value(uint8_t *buf);
-const char *json_strerr();
-size_t      json_errloc();
-JSONError   json_errno();
+const char *json_strerr(void);
+size_t      json_errloc(void);
+JSONError   json_errno(void);
 
 extern const JSONAdapter NumberAdapter;
 extern const JSONAdapter StringAdapter;
