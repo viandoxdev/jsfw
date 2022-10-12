@@ -2,9 +2,8 @@ Q=@
 CC=clang
 
 GCCCFLAGS=-Wno-format-truncation 
-CLANGCFLAGS=-fsanitize=memory
-CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
-LDFLAGS=-lm -fsanitize=memory
+CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE -fsanitize=address
+LDFLAGS=-lm -fsanitize=address
 
 BUILD_DIR=./objects
 BIN=jsfw
@@ -17,10 +16,6 @@ OBJECTS:=$(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 
 ifeq ($(CC),gcc)
 	CFLAGS:=$(CFLAGS) $(GCCCFLAGS)
-endif
-
-ifeq ($(CC),clang)
-	CFLAGS:=$(CFLAGS) $(CLANGCFLAGS)
 endif
 
 .PHONY: run

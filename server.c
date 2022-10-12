@@ -345,6 +345,8 @@ conn_end:
         pthread_join(thread, NULL);
     }
     free(args);
+    vec_free(device_threads);
+    vec_free(device_controllers);
     return NULL;
 }
 
