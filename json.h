@@ -2,6 +2,7 @@
 #ifndef JSON_H_
 #define JSON_H_
 #include <limits.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -37,6 +38,34 @@ typedef enum {
     JERRORNO_MAX     = 10
 } JSONError;
 
+typedef struct {
+    char                     *path;
+    const struct JSONAdapter *type;
+    size_t                    offset;
+    // Function setting default value
+    void (*default_func)(void *ptr);
+    // Optional transformer, can be NULL
+    void (*transformer)(void *arg, void *ptr);
+} JSONPropertyAdapter;
+
+struct JSONAdapter {
+    const JSONPropertyAdapter *props;
+    size_t                     size;
+    size_t                     prop_count;
+};
+typedef struct JSONAdapter JSONAdapter;
+
+void        json_adapt(uint8_t *buf, const JSONAdapter *adapter, void *ptr);
+int         json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len);
+void        json_print_value(uint8_t *buf);
+const char *json_strerr(void);
+size_t      json_errloc(void);
+JSONError   json_errno(void);
+
+extern const JSONAdapter NumberAdapter;
+extern const JSONAdapter StringAdapter;
+extern const JSONAdapter BooleanAdapter;
+
 #ifdef JSON_C_
 static const char *JSONErrorMessage[JERRORNO_MAX + 1] = {
     "No error",
@@ -51,20 +80,26 @@ static const char *JSONErrorMessage[JERRORNO_MAX + 1] = {
     "Unexpected character in object",
     "?",
 };
+
+static const char *JSONTypeName[7] = {
+    "[Unknown]", "String", "Number", "Object", "Array", "Boolean", "Null",
+};
+
+const JSONAdapter NumberAdapter = {
+    .prop_count = Number,
+    .props      = NULL,
+    .size       = sizeof(double),
+};
+const JSONAdapter StringAdapter = {
+    .prop_count = String,
+    .props      = NULL,
+    .size       = sizeof(char *),
+};
+const JSONAdapter BooleanAdapter = {
+    .prop_count = Boolean,
+    .props      = NULL,
+    .size       = sizeof(bool),
+};
 #endif
-
-// See client.c for usage of adapters
-typedef struct {
-    char    *path;
-    JSONType type;
-    size_t   offset;
-} JSONAdapter;
-
-void        json_adapt(uint8_t *buf, JSONAdapter *adapters, size_t adapter_count, void *ptr);
-int         json_parse(const char *src, size_t src_len, uint8_t *dst, size_t dst_len);
-void        json_print_value(uint8_t *buf);
-const char *json_strerr();
-size_t      json_errloc();
-JSONError   json_errno();
 
 #endif

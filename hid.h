@@ -2,8 +2,10 @@
 #ifndef HID_H_
 #define HID_H_
 #include "net.h"
+#include "server.h"
 
 #include <linux/input-event-codes.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 // Unique identifier for devices (provided by linux), May be the mac address
@@ -24,14 +26,21 @@ typedef struct {
     int               event;
     int               hidraw;
     uniq_t            uniq;
+    uint64_t          id;
     char             *name;
     DeviceMap         mapping;
     MessageDeviceInfo device_info;
 } PhysicalDevice;
 
-void          *hid_thread();
-void           return_device(PhysicalDevice *dev);
-PhysicalDevice get_device();
-void           apply_controller_state(PhysicalDevice *dev, MessageControllerState *state);
+typedef struct {
+    PhysicalDevice         dev;
+    ServerConfigController ctr;
+} Controller;
+
+void       *hid_thread(void *arg);
+void        return_device(Controller *c);
+void        forget_device(Controller *c);
+Controller *get_device(char *tag, bool *stop);
+void        apply_controller_state(Controller *c, MessageControllerState *state);
 
 #endif

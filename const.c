@@ -3,14 +3,19 @@
 #include <stdint.h>
 #include <time.h>
 
+// These are default values for the most part
+// Any value updated here should also be updated in README.md
+
 // How long between each device poll
 const struct timespec POLL_DEVICE_INTERVAL = {.tv_sec = 1, .tv_nsec = 0};
+// How long (in ms) to wait for a request message on a connection before giving up
+const int REQUEST_TIMEOUT = 2000;
 // Default name for physical device, only visible in logs
 const char *DEVICE_DEFAULT_NAME = "Unnamed Device";
 // Path to the fifo
 const char *FIFO_PATH = "/tmp/jsfw_fifo";
 // Delay (in seconds) between each connection retry for the client
-const uint32_t CONNECTION_RETRY_DELAY = 5;
+const struct timespec CONNECTION_RETRY_DELAY = {.tv_sec = 5, .tv_nsec = 0};
 // Displayed vendor for the virtual device
 const uint16_t VIRTUAL_DEVICE_VENDOR = 0x6969;
 // Displayed product for the virtual device
