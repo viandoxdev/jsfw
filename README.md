@@ -135,7 +135,7 @@ Additionaly messages can be sent to the client's fifo to change the led colors (
     // (default: [0, 0]) Setting for the rumble, values are in range 0-255 first element is small rumble, second is big
     "rumble": [255, 0],
     // (default: [0, 0]) Setting for led flash, values are in range 0-255, first element is led on, second is led off
-    "false": [0, 255],
+    "flash": [0, 255],
     // (default: "#FFFFFF") Hex color for the led
     "led_color": "#FF0000"
 }
