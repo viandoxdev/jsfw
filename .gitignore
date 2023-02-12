@@ -1,3 +1,7 @@
 .ccls-cache
 objects
 jsfw
+
+# configs used for testings
+client_config.json
+server_config.json

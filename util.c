@@ -149,22 +149,18 @@ void tsf_hex_to_color(void *arg, void *ptr) {
         return;
     }
 
-    uint8_t  digit[6] = {0};
     uint8_t *color    = ptr;
 
-    for (int i = 1; i < 7; i++) {
-        digit[i] = hex_digit(s[i]);
-        if (digit[i] == 16) {
-            printf("JSON: illegal character in hex color: '%c'\n", s[i]);
+    for (int i = 0; i < 3; i++) {
+        uint8_t digits[2] = {hex_digit(s[1 + 2 * i]), hex_digit(s[2 + 2 * i])};
+
+        if (digits[0] == 16 || digits[1] == 16) {
+            printf("JSON: illegal character in hex color: '%.7s'\n", s);
             free(s);
             return;
         }
 
-        if (i % 2 == 0) {
-            uint8_t c    = digit[i];
-            uint8_t p    = digit[i - 1];
-            color[i / 2] = (p << 4) | c;
-        }
+        color[i] = (digits[0] << 4) | digits[1];
     }
 
     free(s);
