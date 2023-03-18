@@ -11,6 +11,8 @@
 #define MAGIC_SIZE sizeof(MAGIC_TYPE)
 static const MAGIC_TYPE MAGIC_BEG = 0xDEADCAFE;
 static const MAGIC_TYPE MAGIC_END = 0xCAFEDEAD;
+// Align n to the next MAGIC boundary
+static inline size_t align_m(uintptr_t n) { return (((n - 1) >> 2) + 1) << 2; }
 
 typedef enum {
     NoMessage       = 0,
@@ -26,7 +28,8 @@ typedef struct {
     MessageCode code;
     // + 1 byte of padding
 
-    uint16_t index;
+    uint8_t slot;
+    uint8_t index;
 
     uint16_t abs_count;
     uint16_t rel_count;
@@ -52,7 +55,9 @@ typedef struct {
 typedef struct {
     MessageCode code;
     // + 1 byte of padding
-    uint16_t index;
+
+    uint8_t slot;
+    uint8_t index;
 
     uint16_t abs_count;
     uint16_t rel_count;

@@ -7,8 +7,7 @@
 void client_run(char *address, uint16_t port, char *config_path);
 
 typedef struct {
-    char  **tags;
-    size_t  tag_count;
+    char   *tag;
     int32_t device_vendor;
     int32_t device_product;
     char   *device_name;
@@ -17,6 +16,11 @@ typedef struct {
 typedef struct {
     ClientController *controllers;
     size_t            controller_count;
+} ClientSlot;
+
+typedef struct {
+    ClientSlot *slots;
+    size_t      slot_count;
 
     char           *fifo_path;
     struct timespec retry_delay;

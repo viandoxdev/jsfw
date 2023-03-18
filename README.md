@@ -39,9 +39,13 @@ and a client with this one:
 
 ```json 
 {
-    "controllers": [
+    "slots": [
         {
-            "tag": ["Controller"]
+            "controllers": [
+                {
+                    "tag": "Controller"
+                }
+            ]
         }
     ]
 }
@@ -104,17 +108,24 @@ The client configuration specifies what devices the client wants as well as unde
 ```js
 // Any property can be ommitted, unless specified otherwise
 // The values listed here are examples
+// Comments are here to document things, they are not allowed in the actual config
 {
-    "controllers": [
+    // (required) The slots the client has
+    "slots": [
         {
-            // (required) Accepted tags of the device to request
-            "tag": ["Joystick"],
-            // (default: 6969) Vendor code for the virtual device, expects a 4 long hex string
-            "vendor": "dead",
-            // (default: 0420) Product code for the virtual device, expects a 4 long hex string
-            "product": "beef",
-            // (default: "JSFW Virtual Device") Name for the virtual device
-            "name": "Emanuel"
+            // (required) The controllers that are accepted in that slot
+            "controllers": [
+                {
+                    // (required) Accepted tags of the device to request
+                    "tag": ["Joystick"],
+                    // (default: 6969) Vendor code for the virtual device, expects a 4 long hex string
+                    "vendor": "dead",
+                    // (default: 0420) Product code for the virtual device, expects a 4 long hex string
+                    "product": "beef",
+                    // (default: "JSFW Virtual Device") Name for the virtual device
+                    "name": "Emanuel"
+                }
+            ]
         }
     ],
     // (default: "/tmp/jsfw_fifo") Path to the fifo for hidraw
@@ -130,7 +141,7 @@ Additionaly messages can be sent to the client's fifo to change the led colors (
 // Any property can be ommitted, unless specified otherwise
 // The values listed here are examples
 {
-    // (default: 0) Index of the device to send the state to, this is the index in the client configuration controllers list
+    // (default: 0) Index of the slot to send the state to, this is the index in the client configuration controllers list
     "index": 1,
     // (default: [0, 0]) Setting for the rumble, values are in range 0-255 first element is small rumble, second is big
     "rumble": [255, 0],

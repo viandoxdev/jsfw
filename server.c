@@ -123,6 +123,7 @@ void device_thread_exit(int _sig) {
     Controller *ctr = *args->controller;
     if (ctr != NULL) {
         return_device(ctr);
+        free(ctr);
     }
 
     for (int i = 0; i < args->tag_count; i++) {
@@ -146,16 +147,22 @@ void *device_thread(void *args_) {
     MessageDeviceInfo dev_info;
 
     while (true) {
+        if (*args->controller != NULL) {
+            free(*args->controller);
+        }
+
         *args->controller = NULL;
-        Controller *ctr   = get_device(args->tags, args->tag_count, &args->conn->closed);
-        if (ctr == NULL) {
+        uint8_t     controller_index;
+        Controller *ctr = malloc(sizeof(Controller));
+        if (!get_device(args->tags, args->tag_count, &args->conn->closed, ctr, &controller_index)) {
             break;
         }
         *args->controller = ctr;
         dev_info          = ctr->dev.device_info;
-        dev_info.index    = args->index;
+        dev_info.slot     = args->index;
+        dev_info.index    = controller_index;
 
-        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%016lx)\n", args->conn->id, args->index, ctr->ctr.tag,
+        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%lu)\n", args->conn->id, args->index, ctr->ctr.tag,
                ctr->dev.name, ctr->dev.id);
 
         // Send over device info
@@ -173,7 +180,8 @@ void *device_thread(void *args_) {
         report.abs_count = ctr->dev.device_info.abs_count;
         report.rel_count = ctr->dev.device_info.rel_count;
         report.key_count = ctr->dev.device_info.key_count;
-        report.index     = args->index;
+        report.slot      = args->index;
+        report.index     = controller_index;
 
         while (true) {
             struct input_event event;

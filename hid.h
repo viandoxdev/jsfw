@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Unique identifier for devices (provided by linux), May be the mac address
+// Unique identifier for devices (provided by linux)
 typedef uint64_t uniq_t;
 
 // Mapping to go from index to id of events
@@ -38,10 +38,10 @@ typedef struct {
     ServerConfigController ctr;
 } Controller;
 
-void       *hid_thread(void *arg);
-void        return_device(Controller *c);
-void        forget_device(Controller *c);
-Controller *get_device(char **tags, size_t tag_count, bool *stop);
-void        apply_controller_state(Controller *c, MessageControllerState *state);
+void *hid_thread(void *arg);
+void  return_device(Controller *c);
+void  forget_device(Controller *c);
+bool  get_device(char **tags, size_t tag_count, bool *stop, Controller *res, uint8_t *index);
+void  apply_controller_state(Controller *c, MessageControllerState *state);
 
 #endif

@@ -30,23 +30,26 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
     MessageCode code      = (MessageCode)code_byte;
     uint32_t    size      = 0;
 
-    uint16_t abs, rel, key, index, *buf16;
+    uint16_t abs, rel, key, *buf16;
+    uint8_t  index, slot;
 
     switch (code) {
     case DeviceInfo:
         if (len < 7)
             return -1;
-        // buf + 2: a byte for code and a byte for padding
-        buf16 = (uint16_t *)(buf + 2);
-        index = buf16[0];
-        abs   = buf16[1];
-        rel   = buf16[2];
-        key   = buf16[3];
+        slot  = buf[2];
+        index = buf[3];
+        // buf + 4: a byte for, code, padding, slot, index
+        buf16 = (uint16_t *)(buf + 4);
+        abs   = buf16[0];
+        rel   = buf16[1];
+        key   = buf16[2];
         buf += 12;
         if (MSS_DEVICE_INFO(abs, rel, key) > len)
             return -1;
 
         dst->device_info.code      = code;
+        dst->device_info.slot      = slot;
         dst->device_info.index     = index;
         dst->device_info.abs_count = abs;
         dst->device_info.rel_count = rel;
@@ -83,17 +86,19 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
         if (len < 7)
             return -1;
 
-        // buf + 2: a byte for code and a byte of padding
-        buf16 = (uint16_t *)(buf + 2);
-        index = buf16[0];
-        abs   = buf16[1];
-        rel   = buf16[2];
-        key   = buf16[3];
+        slot  = buf[2];
+        index = buf[3];
+        // buf + 4: a byte for, code, padding, slot and index
+        buf16 = (uint16_t *)(buf + 4);
+        abs   = buf16[0];
+        rel   = buf16[1];
+        key   = buf16[2];
         buf += 12;
         if (len < MSS_DEVICE_REPORT(abs, rel, key))
             return -1;
 
         dst->device_report.code      = code;
+        dst->device_report.slot      = slot;
         dst->device_report.index     = index;
         dst->device_report.abs_count = abs;
         dst->device_report.rel_count = rel;
@@ -198,16 +203,19 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
         return -1;
     }
 
-    if (size + MAGIC_SIZE > len + 1) {
+    if (align_m(size) + MAGIC_SIZE > len + 1) {
         return -1;
     }
 
-    if (*(MAGIC_TYPE *)buf != MAGIC_END) {
+    // WARN: This is technically bad, but should be ok nonetheless
+    MAGIC_TYPE *mbuf = (MAGIC_TYPE *)align_m((uintptr_t)buf);
+
+    if (*mbuf != MAGIC_END) {
         printf("NET:     Magic not found\n");
         return -1;
     }
 
-    return size + 2 * MAGIC_SIZE;
+    return align_m(size) + 2 * MAGIC_SIZE;
 }
 
 // Serialize the message msg in buf, buf must be at least 4 aligned. Returns -1 on error (buf not big enough);
@@ -231,15 +239,15 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         if (len < MSS_DEVICE_INFO(abs, rel, key))
             return -1;
 
-        // We begin 4 aligned
         buf[0] = (uint8_t)msg->code;
-        // buf + 2: a byte for code and a byte for padding
-        buf16 = (uint16_t *)(buf + 2);
-        // 2 aligned here
-        buf16[0] = msg->device_info.index;
-        buf16[1] = abs;
-        buf16[2] = rel;
-        buf16[3] = key;
+        // 1 byte of padding
+        buf[2] = (uint8_t)msg->device_info.slot;
+        buf[3] = (uint8_t)msg->device_info.index;
+        // buf + 4: a byte for, code, padding, slot, index
+        buf16    = (uint16_t *)(buf + 4);
+        buf16[0] = abs;
+        buf16[1] = rel;
+        buf16[2] = key;
         buf += 12;
 
         // Back to 4 aligned
@@ -278,12 +286,14 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
             return -1;
 
         buf[0] = (uint8_t)msg->code;
-        // buf + 2: a byte for code and a byte for padding
-        buf16    = (uint16_t *)(buf + 2);
-        buf16[0] = msg->device_report.index;
-        buf16[1] = abs;
-        buf16[2] = rel;
-        buf16[3] = key;
+        // 1 byte of padding
+        buf[2] = msg->device_report.slot;
+        buf[3] = msg->device_report.index;
+        // buf + 4: a byte for, code, padding, slot and index
+        buf16    = (uint16_t *)(buf + 4);
+        buf16[0] = abs;
+        buf16[1] = rel;
+        buf16[2] = key;
         buf += 12;
         // We're 4 aligned already
         for (int i = 0; i < abs; i++) {
@@ -340,9 +350,7 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
             buf += 2;
 
             for (int j = 0; j < tag_count; j++) {
-                printf("about to strlen\n");
                 int str_len  = strlen(tags[j]);
-                printf("len : %i\n", str_len);
                 int byte_len = align_2(str_len);
 
                 expected_len += 2 + byte_len;
@@ -376,13 +384,15 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         return -1;
     }
 
-    if (size + MAGIC_SIZE > len) {
+    if (align_m(size) + MAGIC_SIZE > len) {
         return -1;
     }
 
-    *(MAGIC_TYPE *)buf = MAGIC_END;
+    MAGIC_TYPE *mbuf = (MAGIC_TYPE *)align_m((uintptr_t)buf);
 
-    return size + MAGIC_SIZE * 2;
+    *mbuf = MAGIC_END;
+
+    return align_m(size) + MAGIC_SIZE * 2;
 }
 
 void msg_free(Message *msg) {

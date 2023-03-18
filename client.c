@@ -72,7 +72,7 @@ static const JSONAdapter ControllerStateAdapter = {
 };
 
 static const JSONPropertyAdapter ControllerAdapterProps[] = {
-    {".tag[]",   &StringAdapter, offsetof(ClientController, tags),           default_to_null, NULL          },
+    {".tag",     &StringAdapter, offsetof(ClientController, tag),            default_to_null, NULL          },
     {".vendor",  &StringAdapter, offsetof(ClientController, device_vendor),  default_vendor,  tsf_hex_to_i32},
     {".product", &StringAdapter, offsetof(ClientController, device_product), default_product, tsf_hex_to_i32},
     {".name",    &StringAdapter, offsetof(ClientController, device_name),    default_name,    NULL          },
@@ -83,10 +83,19 @@ static const JSONAdapter ControllerAdapter = {
     .size       = sizeof(ClientController),
 };
 
+static const JSONPropertyAdapter SlotAdapterProps[] = {
+    {".controllers[]", &ControllerAdapter, offsetof(ClientSlot, controllers), default_to_null, NULL},
+};
+static const JSONAdapter SlotAdapter = {
+    .props      = SlotAdapterProps,
+    .prop_count = sizeof(SlotAdapterProps) / sizeof(JSONPropertyAdapter),
+    .size       = sizeof(ClientSlot),
+};
+
 static const JSONPropertyAdapter ClientConfigAdapterProps[] = {
-    {".controllers[]", &ControllerAdapter, offsetof(ClientConfig, controllers), default_to_null,     NULL                  },
-    {".fifo_path",     &StringAdapter,     offsetof(ClientConfig, fifo_path),   default_fifo_path,   NULL                  },
-    {".retry_delay",   &NumberAdapter,     offsetof(ClientConfig, retry_delay), default_retry_delay, tsf_numsec_to_timespec}
+    {".slots[]",     &SlotAdapter,   offsetof(ClientConfig, slots),       default_to_null,     NULL                  },
+    {".fifo_path",   &StringAdapter, offsetof(ClientConfig, fifo_path),   default_fifo_path,   NULL                  },
+    {".retry_delay", &NumberAdapter, offsetof(ClientConfig, retry_delay), default_retry_delay, tsf_numsec_to_timespec}
 };
 static const JSONAdapter ConfigAdapter = {
     .props      = ClientConfigAdapterProps,
@@ -99,23 +108,23 @@ static void print_config() {
     printf("CLIENT: Config\n");
     printf("  fifo_path: %s\n", config.fifo_path);
     printf("  retry_delay: %fs\n", timespec_to_double(&config.retry_delay));
-    printf("  controllers: \n");
-    for (size_t i = 0; i < config.controller_count; i++) {
-        ClientController *ctr = &config.controllers[i];
-        printf("  - tags: ['%s'", ctr->tags[0]);
-        for (size_t j = 1; j < ctr->tag_count; j++) {
-            printf(", '%s'", ctr->tags[j]);
+    printf("  slots: \n");
+    for (size_t i = 0; i < config.slot_count; i++) {
+        ClientSlot *slot = &config.slots[i];
+        printf("  - controllers:\n");
+        for (size_t j = 0; j < slot->controller_count; j++) {
+            ClientController *ctr = &slot->controllers[j];
+            printf("    - tag: '%s'\n", ctr->tag);
+            printf("      name: %s\n", ctr->device_name);
+            printf("      vendor: %04x\n", ctr->device_vendor);
+            printf("      product: %04x\n", ctr->device_product);
         }
-        printf("]\n");
-        printf("    name: %s\n", ctr->device_name);
-        printf("    vendor: %04x\n", ctr->device_vendor);
-        printf("    product: %04x\n", ctr->device_product);
     }
     printf("\n");
 }
 
 void destroy_devices(void) {
-    for (int i = 0; i < config.controller_count; i++) {
+    for (int i = 0; i < config.slot_count; i++) {
         int                fd   = *(int *)vec_get(&devices_fd, i);
         MessageDeviceInfo *info = vec_get(&devices_info, i);
 
@@ -135,14 +144,14 @@ bool device_exists(int index) {
     return info->code == DeviceInfo;
 }
 
-void device_destroy(int index) {
-    if (index >= devices_info.len) {
+void device_destroy(int slot) {
+    if (slot >= devices_info.len) {
         return;
     }
 
-    int fd = *(int *)vec_get(&devices_fd, index);
+    int fd = *(int *)vec_get(&devices_fd, slot);
 
-    MessageDeviceInfo *info = vec_get(&devices_info, index);
+    MessageDeviceInfo *info = vec_get(&devices_info, slot);
 
     if (info->code == DeviceInfo) {
         ioctl(fd, UI_DEV_DESTROY);
@@ -151,14 +160,14 @@ void device_destroy(int index) {
 }
 
 void device_init(MessageDeviceInfo *dev) {
-    if (dev->index >= devices_info.len) {
+    if (dev->slot >= devices_info.len) {
         printf("CLIENT: Got wrong device index\n");
         return;
     }
 
-    device_destroy(dev->index);
+    device_destroy(dev->slot);
 
-    int fd = *(int *)vec_get(&devices_fd, dev->index);
+    int fd = *(int *)vec_get(&devices_fd, dev->slot);
 
     // Abs
     if (dev->abs_count > 0) {
@@ -193,7 +202,7 @@ void device_init(MessageDeviceInfo *dev) {
         }
     }
 
-    ClientController *ctr = &config.controllers[dev->index];
+    ClientController *ctr = &config.slots[dev->slot].controllers[dev->index];
 
     struct uinput_setup setup = {0};
 
@@ -206,10 +215,10 @@ void device_init(MessageDeviceInfo *dev) {
     ioctl(fd, UI_DEV_SETUP, &setup);
     ioctl(fd, UI_DEV_CREATE);
 
-    MessageDeviceInfo *dst = vec_get(&devices_info, dev->index);
+    MessageDeviceInfo *dst = vec_get(&devices_info, dev->slot);
 
     memcpy(dst, dev, sizeof(MessageDeviceInfo));
-    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->index, ctr->device_name, dev->abs_count,
+    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->slot, ctr->device_name, dev->abs_count,
            dev->rel_count, dev->key_count);
 }
 
@@ -231,12 +240,12 @@ bool device_emit(int index, uint16_t type, uint16_t id, uint32_t value) {
 
 // Update device with report
 void device_handle_report(MessageDeviceReport *report) {
-    if (!device_exists(report->index)) {
-        printf("CLIENT: [%d] Got report before device info\n", report->index);
+    if (!device_exists(report->slot)) {
+        printf("CLIENT: [%d] Got report before device info\n", report->slot);
         return;
     }
 
-    MessageDeviceInfo *info = vec_get(&devices_info, report->index);
+    MessageDeviceInfo *info = vec_get(&devices_info, report->slot);
 
     if (report->abs_count != info->abs_count || report->rel_count != info->rel_count || report->key_count != info->key_count) {
         printf("CLIENT: Report doesn't match with device info\n");
@@ -244,25 +253,25 @@ void device_handle_report(MessageDeviceReport *report) {
     }
 
     for (int i = 0; i < report->abs_count; i++) {
-        if (device_emit(report->index, EV_ABS, info->abs_id[i], report->abs[i]) != 0) {
+        if (device_emit(report->slot, EV_ABS, info->abs_id[i], report->abs[i]) != 0) {
             printf("CLIENT: Error writing abs event to uinput\n");
         }
     }
 
     for (int i = 0; i < report->rel_count; i++) {
-        if (device_emit(report->index, EV_REL, info->rel_id[i], report->rel[i]) != 0) {
+        if (device_emit(report->slot, EV_REL, info->rel_id[i], report->rel[i]) != 0) {
             printf("CLIENT: Error writing rel event to uinput\n");
         }
     }
 
     for (int i = 0; i < report->key_count; i++) {
-        if (device_emit(report->index, EV_KEY, info->key_id[i], (uint32_t)(!report->key[i]) - 1) != 0) {
+        if (device_emit(report->slot, EV_KEY, info->key_id[i], (uint32_t)(!report->key[i]) - 1) != 0) {
             printf("CLIENT: Error writing key event to uinput\n");
         }
     }
     // Reports are sent by the server every time the server receives an EV_SYN from the physical device, so we
     // send one when we receive the report to match
-    device_emit(report->index, EV_SYN, 0, 0);
+    device_emit(report->slot, EV_SYN, 0, 0);
 }
 
 void setup_devices(void) {
@@ -272,7 +281,7 @@ void setup_devices(void) {
     MessageDeviceInfo no_info = {0};
     no_info.code              = NoMessage;
 
-    for (int i = 0; i < config.controller_count; i++) {
+    for (int i = 0; i < config.slot_count; i++) {
         int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
         if (fd < 0) {
             perror("CLIENT: Can't open /dev/uinput, aborting now");
@@ -371,19 +380,19 @@ void setup_server(char *address, uint16_t port) {
 }
 
 void build_device_request(void) {
-    TagList * reqs = malloc(config.controller_count * sizeof(TagList *));
-    for (int i = 0; i < config.controller_count; i++) {
-        TagList * req = &reqs[i];
-        req->count = config.controllers[i].tag_count;
-        req->tags  = malloc(req->count * sizeof(char *));
+    TagList *reqs = malloc(config.slot_count * sizeof(TagList));
+    for (int i = 0; i < config.slot_count; i++) {
+        TagList *req = &reqs[i];
+        req->count   = config.slots[i].controller_count;
+        req->tags    = malloc(req->count * sizeof(char *));
 
         for (int j = 0; j < req->count; j++) {
-            req->tags[j] = config.controllers[i].tags[j];
+            req->tags[j] = config.slots[i].controllers[j].tag;
         }
     }
 
     device_request.code          = Request;
-    device_request.request_count = config.controller_count;
+    device_request.request_count = config.slot_count;
     device_request.requests      = reqs;
 }
 
@@ -490,12 +499,11 @@ void client_run(char *address, uint16_t port, char *config_path) {
             recv(sock, buf, msg_len, 0);
 
             if (message.code == DeviceInfo) {
-                if (device_exists(message.device_info.index)) {
+                if (device_exists(message.device_info.slot)) {
                     printf("CLIENT: Got more than one device info for same device\n");
                 }
 
                 device_init((MessageDeviceInfo *)&message);
-                printf("CLIENT: Got device %d\n", message.device_info.index);
             } else if (message.code == DeviceReport) {
                 device_handle_report((MessageDeviceReport *)&message);
             } else if (message.code == DeviceDestroy) {
