@@ -41,7 +41,7 @@ and a client with this one:
 {
     "controllers": [
         {
-            "tag": "Controller"
+            "tag": ["Controller"]
         }
     ]
 }
@@ -107,8 +107,8 @@ The client configuration specifies what devices the client wants as well as unde
 {
     "controllers": [
         {
-            // (required) Tag of the device to request
-            "tag": "Joystick",
+            // (required) Accepted tags of the device to request
+            "tag": ["Joystick"],
             // (default: 6969) Vendor code for the virtual device, expects a 4 long hex string
             "vendor": "dead",
             // (default: 0420) Product code for the virtual device, expects a 4 long hex string

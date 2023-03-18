@@ -7,7 +7,8 @@
 void client_run(char *address, uint16_t port, char *config_path);
 
 typedef struct {
-    char   *tag;
+    char  **tags;
+    size_t  tag_count;
     int32_t device_vendor;
     int32_t device_product;
     char   *device_name;

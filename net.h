@@ -79,12 +79,18 @@ typedef struct {
 #define MSS_CONTROLLER_STATE 10
 
 typedef struct {
-    MessageCode code;
+    char   **tags;
+    uint16_t count;
+} TagList;
 
-    char   **requests;
+typedef struct {
+    MessageCode code;
+    // + 1 byte of padding
+
+    TagList *requests;
     uint16_t request_count;
 } MessageRequest;
-#define MSS_REQUEST(count) (2 + 2 * count)
+#define MSS_REQUEST(count) (2 + 2 * count + 1)
 
 typedef struct {
     MessageCode code;

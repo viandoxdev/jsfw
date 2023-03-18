@@ -72,7 +72,7 @@ static const JSONAdapter ControllerStateAdapter = {
 };
 
 static const JSONPropertyAdapter ControllerAdapterProps[] = {
-    {".tag",     &StringAdapter, offsetof(ClientController, tag),            default_to_null, NULL          },
+    {".tag[]",   &StringAdapter, offsetof(ClientController, tags),           default_to_null, NULL          },
     {".vendor",  &StringAdapter, offsetof(ClientController, device_vendor),  default_vendor,  tsf_hex_to_i32},
     {".product", &StringAdapter, offsetof(ClientController, device_product), default_product, tsf_hex_to_i32},
     {".name",    &StringAdapter, offsetof(ClientController, device_name),    default_name,    NULL          },
@@ -93,6 +93,26 @@ static const JSONAdapter ConfigAdapter = {
     .prop_count = sizeof(ClientConfigAdapterProps) / sizeof(JSONPropertyAdapter),
     .size       = sizeof(ClientConfig),
 };
+
+// Print the current config, for debugging purposes
+static void print_config() {
+    printf("CLIENT: Config\n");
+    printf("  fifo_path: %s\n", config.fifo_path);
+    printf("  retry_delay: %fs\n", timespec_to_double(&config.retry_delay));
+    printf("  controllers: \n");
+    for (size_t i = 0; i < config.controller_count; i++) {
+        ClientController *ctr = &config.controllers[i];
+        printf("  - tags: ['%s'", ctr->tags[0]);
+        for (size_t j = 1; j < ctr->tag_count; j++) {
+            printf(", '%s'", ctr->tags[j]);
+        }
+        printf("]\n");
+        printf("    name: %s\n", ctr->device_name);
+        printf("    vendor: %04x\n", ctr->device_vendor);
+        printf("    product: %04x\n", ctr->device_product);
+    }
+    printf("\n");
+}
 
 void destroy_devices(void) {
     for (int i = 0; i < config.controller_count; i++) {
@@ -351,14 +371,20 @@ void setup_server(char *address, uint16_t port) {
 }
 
 void build_device_request(void) {
-    char **tags = malloc(config.controller_count * sizeof(char *));
+    TagList * reqs = malloc(config.controller_count * sizeof(TagList *));
     for (int i = 0; i < config.controller_count; i++) {
-        tags[i] = config.controllers[i].tag;
+        TagList * req = &reqs[i];
+        req->count = config.controllers[i].tag_count;
+        req->tags  = malloc(req->count * sizeof(char *));
+
+        for (int j = 0; j < req->count; j++) {
+            req->tags[j] = config.controllers[i].tags[j];
+        }
     }
 
     device_request.code          = Request;
     device_request.request_count = config.controller_count;
-    device_request.requests      = tags;
+    device_request.requests      = reqs;
 }
 
 void client_run(char *address, uint16_t port, char *config_path) {
@@ -380,6 +406,10 @@ void client_run(char *address, uint16_t port, char *config_path) {
         }
 
         json_adapt(jbuf, &ConfigAdapter, &config);
+
+#ifdef VERBOSE
+        print_config();
+#endif
 
         free(cbuf);
         fclose(configfd);

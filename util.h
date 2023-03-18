@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 
 // Print a formatted message and exit with code 1
 void     panicf(const char *fmt, ...);
@@ -18,6 +19,8 @@ static inline size_t align_4(size_t n) { return (((n - 1) >> 2) + 1) << 2; }
 // Align n to the next 2 boundary
 static inline size_t align_2(size_t n) { return (((n - 1) >> 1) + 1) << 1; }
 uint8_t              parse_hex_digit(char h);
+// Convert timespec to double in seconds mostly for printing.
+double timespec_to_double(struct timespec *ts);
 
 void default_to_null(void *ptr);
 void default_to_false(void *ptr);

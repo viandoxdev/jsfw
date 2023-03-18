@@ -140,8 +140,8 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
         dst->request.request_count = *(uint16_t *)(buf + 2);
         buf += 4; // 1 bytes for code, 1 byte for padding and 2 bytes for count
 
-        int    count = dst->request.request_count;
-        char **tags  = malloc(count * sizeof(char *));
+        int      count = dst->request.request_count;
+        TagList *reqs  = malloc(count * sizeof(TagList));
         // The length of the message, will be updated as we read more.
         int expected_len = 3;
 
@@ -151,25 +151,37 @@ int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
                 return -1;
             }
 
-            uint16_t str_len = *(uint16_t *)buf;
+            TagList *tags = &reqs[i];
+            tags->count   = *(uint16_t *)buf;
+            tags->tags    = malloc(tags->count * sizeof(char *));
             buf += 2;
 
-            expected_len += align_2(str_len);
-            if (len < expected_len) {
-                return -1;
+            for (int j = 0; j < tags->count; j++) {
+                expected_len += 2;
+                if (len < expected_len) {
+                    return -1;
+                }
+
+                uint16_t str_len = *(uint16_t *)buf;
+                buf += 2;
+
+                expected_len += align_2(str_len);
+                if (len < expected_len) {
+                    return -1;
+                }
+
+                char *str    = malloc(str_len + 1);
+                str[str_len] = '\0';
+
+                strncpy(str, (char *)buf, str_len);
+
+                tags->tags[j] = str;
+
+                buf += align_2(str_len);
             }
-
-            char *str    = malloc(str_len + 1);
-            str[str_len] = '\0';
-
-            strncpy(str, (char *)buf, str_len);
-
-            tags[i] = str;
-
-            buf += align_2(str_len);
         }
 
-        dst->request.requests = tags;
+        dst->request.requests = reqs;
         size                  = expected_len + 1;
         break;
     }
@@ -313,31 +325,40 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
         if (len < expected_len)
             return -1;
 
-        buf[0]   = (uint8_t)msg->code;
-        buf16    = (uint16_t *)(buf + 2);
-        buf16[0] = msg->request.request_count;
-
-        buf += 4;
-        buf16++;
+        buf[0] = (uint8_t)msg->code;
+        buf += 2;
+        *(uint16_t *)buf = msg->request.request_count;
+        buf += 2;
 
         for (int i = 0; i < msg->request.request_count; i++) {
-            int str_len  = strlen(msg->request.requests[i]);
-            int byte_len = align_2(str_len);
-            *buf16++     = str_len;
-            buf          = (uint8_t *)buf16;
 
-            expected_len += byte_len + 2;
-            if (len < expected_len) {
-                return -1;
+            uint16_t tag_count = msg->request.requests[i].count;
+            char   **tags      = msg->request.requests[i].tags;
+
+            *(uint16_t *)buf = tag_count;
+
+            buf += 2;
+
+            for (int j = 0; j < tag_count; j++) {
+                printf("about to strlen\n");
+                int str_len  = strlen(tags[j]);
+                printf("len : %i\n", str_len);
+                int byte_len = align_2(str_len);
+
+                expected_len += 2 + byte_len;
+                if (len < expected_len) {
+                    return -1;
+                }
+
+                *(uint16_t *)buf = str_len;
+                buf += 2;
+
+                strncpy((char *)buf, tags[j], str_len);
+                buf += byte_len;
             }
-
-            strncpy((char *)buf, msg->request.requests[i], str_len);
-            buf += byte_len;
-            // Buf has to be aligned here since byte_len is two aligned and we started off two aligned
-            buf16 = (uint16_t *)buf;
         }
 
-        size = expected_len;
+        size = expected_len + 1;
         break;
     }
     case DeviceDestroy:
@@ -367,7 +388,10 @@ int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
 void msg_free(Message *msg) {
     if (msg->code == Request) {
         for (int i = 0; i < msg->request.request_count; i++) {
-            free(msg->request.requests[i]);
+            for (int j = 0; j < msg->request.requests[i].count; j++) {
+                free(msg->request.requests[i].tags[j]);
+            }
+            free(msg->request.requests[i].tags);
         }
         free(msg->request.requests);
     }

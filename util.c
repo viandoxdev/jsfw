@@ -27,6 +27,12 @@ uint16_t parse_port(const char *str) {
     return n;
 }
 
+double timespec_to_double(struct timespec *ts) {
+    double secs = ts->tv_sec;
+    secs += ts->tv_nsec / 1000000000;
+    return secs;
+}
+
 uint8_t parse_hex_digit(char h) {
     if (h >= '0' && h <= '9')
         return h - '0';
@@ -149,7 +155,7 @@ void tsf_hex_to_color(void *arg, void *ptr) {
         return;
     }
 
-    uint8_t *color    = ptr;
+    uint8_t *color = ptr;
 
     for (int i = 0; i < 3; i++) {
         uint8_t digits[2] = {hex_digit(s[1 + 2 * i]), hex_digit(s[2 + 2 * i])};

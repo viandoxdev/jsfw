@@ -172,10 +172,21 @@ void poll_devices_init(void) {
     available_devices = vec_of(Controller *);
 }
 
+// Check if tag match any of the tags specified in the tags array (of length tag_count)
+bool match_tags(char *tag, char **tags, size_t tag_count) {
+    for (int i = 0; i < tag_count; i++) {
+        if (strcmp(tag, tags[i]) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // Block to get a device, this is thread safe
 // stop: additional condition to check before doing anything,
 // if the condition is ever found to be true the function will return immediately with a NULL pointer.
-Controller *get_device(char *tag, bool *stop) {
+Controller *get_device(char **tags, size_t tag_count, bool *stop) {
     // Check if we can get one right away
     pthread_mutex_lock(&devices_mutex);
 
@@ -187,7 +198,7 @@ Controller *get_device(char *tag, bool *stop) {
 
         for (int i = 0; i < available_devices.len; i++) {
             Controller *c = *(Controller **)vec_get(&available_devices, i);
-            if (strcmp(c->ctr.tag, tag) == 0) {
+            if (match_tags(c->ctr.tag, tags, tag_count)) {
                 vec_remove(&available_devices, i, NULL);
                 pthread_mutex_unlock(&devices_mutex);
                 return c;
@@ -196,7 +207,7 @@ Controller *get_device(char *tag, bool *stop) {
 
         for (int i = 0; i < cloneable_devices.len; i++) {
             Controller *c = *(Controller **)vec_get(&cloneable_devices, i);
-            if (strcmp(c->ctr.tag, tag) == 0) {
+            if (match_tags(c->ctr.tag, tags, tag_count)) {
                 pthread_mutex_unlock(&devices_mutex);
                 return c;
             }
@@ -229,7 +240,7 @@ void forget_device(Controller *c) {
         pthread_mutex_lock(&devices_mutex);
         for (int i = 0; i < cloneable_devices.len; i++) {
             Controller *d = *(Controller **)vec_get(&cloneable_devices, i);
-            if (d->dev.id == c->dev.id) {
+            if (d->dev.uniq == c->dev.uniq) {
                 vec_remove(&cloneable_devices, i, NULL);
                 break;
             }
@@ -239,10 +250,10 @@ void forget_device(Controller *c) {
 
     // Free the name if it was allocated
     if (c->dev.name != NULL && c->dev.name != DEVICE_DEFAULT_NAME) {
-        printf("HID:     Forgetting device '%s' (%016lx)\n", c->dev.name, c->dev.id);
+        printf("HID:     Forgetting device '%s' (%016lx)\n", c->dev.name, c->dev.uniq);
         free(c->dev.name);
     } else {
-        printf("HID:     Forgetting device %016lx\n", c->dev.id);
+        printf("HID:     Forgetting device %016lx\n", c->dev.uniq);
     }
 
     // try to close the file descriptor, they may be already closed if the device was unpugged.
@@ -253,7 +264,7 @@ void forget_device(Controller *c) {
     pthread_mutex_lock(&known_devices_mutex);
     for (int i = 0; i < known_devices.len; i++) {
         Controller *d = vec_get(&known_devices, i);
-        if (d->dev.id == c->dev.id) {
+        if (d->dev.uniq == c->dev.uniq) {
             vec_remove(&known_devices, i, NULL);
             break;
         }
@@ -343,7 +354,7 @@ void poll_devices(void) {
             pthread_mutex_lock(&known_devices_mutex);
             for (int i = 0; i < known_devices.len; i++) {
                 Controller *c = vec_get(&known_devices, i);
-                if (c->dev.id == dev.id) {
+                if (c->dev.uniq == dev.uniq) {
                     found = true;
                     break;
                 }
@@ -412,7 +423,7 @@ void poll_devices(void) {
             // Pointer to the device in known_devices
             Controller *p = vec_get(&known_devices, index);
 
-            printf("HID:     New device, %s [%s] (%s: %016lx)\n", name, ctr->tag, input->d_name, dev.id);
+            printf("HID:     New device, %s [%s] (%s: %016lx)\n", name, ctr->tag, input->d_name, dev.uniq);
 
             if (ctr->duplicate) {
                 pthread_mutex_lock(&devices_mutex);
@@ -441,11 +452,11 @@ void poll_devices(void) {
 // "Execute" a MessageControllerState: set the led color, rumble and flash using the hidraw interface (Dualshock 4 only)
 void apply_controller_state(Controller *c, MessageControllerState *state) {
     if (c->ctr.ps4_hidraw && c->dev.hidraw < 0) {
-        printf("HID:     Trying to apply controller state on incompatible device (%016lx)\n", c->dev.id);
+        printf("HID:     Trying to apply controller state on incompatible device (%016lx)\n", c->dev.uniq);
         return;
     }
 
-    printf("HID:     (%016lx) Controller state: #%02x%02x%02x flash: (%d, %d) rumble: (%d, %d)\n", c->dev.id, state->led[0],
+    printf("HID:     (%016lx) Controller state: #%02x%02x%02x flash: (%d, %d) rumble: (%d, %d)\n", c->dev.uniq, state->led[0],
            state->led[1], state->led[2], state->flash_on, state->flash_off, state->small_rumble, state->big_rumble);
 
     uint8_t buf[32] = {0x05, 0xff, 0x00, 0x00};

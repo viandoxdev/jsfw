@@ -732,6 +732,12 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
                             char *path) {
     JSONHeader *header = (JSONHeader *)*buf;
 
+    if (header->type == Array) {
+        path[0] = '[';
+        path[1] = ']';
+        path[2] = '\0';
+    }
+
     if (is_primitive(adapter)) {
         // The type of a primitive adapter is stored in prop_count
         JSONType type = adapter->prop_count;
@@ -747,17 +753,21 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
         if (type == Boolean) {
 
             *(bool *)ptr = *(uint64_t *)(*buf) == 1;
+            *buf += 8;
 
         } else if (type == Number) {
 
             *(double *)ptr = *(double *)(*buf);
+            *buf += 8;
 
         } else if (type == String) {
 
-            char *v = malloc(header->len + 1);
+            size_t len = header->len;
+            char  *v   = malloc(header->len + 1);
             strncpy(v, (char *)(*buf), header->len);
             v[header->len] = '\0';
             *(char **)ptr  = v;
+            *buf += align_8(len);
 
         } else {
             printf("JSON: Unknown or illegal primitive adapter of type %s\n", json_type_name(type));
@@ -771,12 +781,6 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
         json_adapt_set_defaults(adapter, ptr);
     }
 
-    if (header->type == Array) {
-        path[0] = '[';
-        path[1] = ']';
-        path[2] = '\0';
-    }
-
     uint8_t buffer_small[64];
 
     for (int i = 0; i < adapter->prop_count; i++) {
@@ -787,15 +791,17 @@ static void json_adapt_priv(uint8_t **buf, const JSONAdapter *adapter, void *ptr
             if (header->type == Array) {
                 uint8_t *array_buf = *buf + sizeof(JSONHeader);
                 uint8_t *end       = array_buf + header->len;
-                size_t   len;
+
+                // Count length of array
+                size_t len;
                 for (len = 0; array_buf < end; len++) {
                     array_buf += align_8(((JSONHeader *)array_buf)->len);
                     array_buf += sizeof(JSONHeader);
                 };
 
                 uint8_t *array_ptr = malloc(len * size);
+                array_buf          = *buf + sizeof(JSONHeader);
 
-                array_buf = *buf + sizeof(JSONHeader);
                 for (size_t index = 0; index < len; index++) {
                     path[0] = '.';
                     path[1] = '\0';

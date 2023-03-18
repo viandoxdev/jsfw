@@ -2,7 +2,7 @@ Q=@
 CC=gcc
 
 GCCCFLAGS=-Wno-format-truncation 
-CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
+CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE -DVERBOSE
 LDFLAGS=-lm
 
 BUILD_DIR=./objects

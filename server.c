@@ -7,6 +7,7 @@
 #include "util.h"
 #include "vec.h"
 
+#include <arpa/inet.h>
 #include <linux/input-event-codes.h>
 #include <linux/input.h>
 #include <netinet/in.h>
@@ -31,7 +32,8 @@ struct Connection {
 
 struct DeviceThreadArgs {
     int                index;
-    char              *tag;
+    char             **tags;
+    size_t             tag_count;
     Controller       **controller;
     struct Connection *conn;
 };
@@ -86,6 +88,34 @@ static sigset_t      empty_sigset;
     if (sigaction(sig, &(struct sigaction){{SIG_IGN}}, NULL) != 0)                                                               \
     printf("SERVER:  can't ignore " #sig ".\n")
 
+static void print_config() {
+    printf("SERVER: Config\n");
+    printf("  retry_delay: %fs\n", (double)(config.request_timeout) / 1000.0);
+    printf("  poll_interval: %fs\n", timespec_to_double(&config.poll_interval));
+    printf("  controllers:\n");
+    for (size_t i = 0; i < config.controller_count; i++) {
+        ServerConfigController *ctr = &config.controllers[i];
+        printf("  - tag: '%s'\n", ctr->tag);
+        printf("    duplicate: %s\n", ctr->duplicate ? "true" : "false");
+        printf("    ps4_hidraw: %s\n", ctr->ps4_hidraw ? "true" : "false");
+        if (ctr->filter.name != NULL || ctr->filter.js != false || ctr->filter.uniq != 0 || ctr->filter.vendor >= 0 ||
+            ctr->filter.product >= 0) {
+            printf("    filter:\n");
+            if (ctr->filter.name != NULL)
+                printf("      name: '%s'\n", ctr->filter.name);
+            if (ctr->filter.js)
+                printf("      has_js\n");
+            if (ctr->filter.uniq != 0)
+                printf("      uniq: %016lx\n", ctr->filter.uniq);
+            if (ctr->filter.vendor >= 0)
+                printf("      vendor: %04x\n", ctr->filter.vendor);
+            if (ctr->filter.product >= 0)
+                printf("      product: %04x\n", ctr->filter.product);
+        }
+    }
+    printf("\n");
+}
+
 void device_thread_exit(int _sig) {
     struct DeviceThreadArgs *args = pthread_getspecific(device_args_key);
     printf("CONN(%d): [%d] exiting\n", args->conn->id, args->index);
@@ -95,7 +125,11 @@ void device_thread_exit(int _sig) {
         return_device(ctr);
     }
 
-    free(args->tag);
+    for (int i = 0; i < args->tag_count; i++) {
+        free(args->tags[i]);
+    }
+
+    free(args->tags);
     free(args);
     pthread_exit(NULL);
 }
@@ -113,7 +147,7 @@ void *device_thread(void *args_) {
 
     while (true) {
         *args->controller = NULL;
-        Controller *ctr   = get_device(args->tag, &args->conn->closed);
+        Controller *ctr   = get_device(args->tags, args->tag_count, &args->conn->closed);
         if (ctr == NULL) {
             break;
         }
@@ -121,7 +155,7 @@ void *device_thread(void *args_) {
         dev_info          = ctr->dev.device_info;
         dev_info.index    = args->index;
 
-        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%016lx)\n", args->conn->id, args->index, args->tag,
+        printf("CONN(%d): [%d] Found suitable [%s] device: '%s' (%016lx)\n", args->conn->id, args->index, ctr->ctr.tag,
                ctr->dev.name, ctr->dev.id);
 
         // Send over device info
@@ -319,10 +353,16 @@ void *server_handle_conn(void *args_) {
                 vec_push(&device_controllers, &ctr);
 
                 struct DeviceThreadArgs *dev_args = malloc(sizeof(struct DeviceThreadArgs));
-                dev_args->controller              = vec_get(&device_controllers, index);
-                dev_args->tag                     = strdup(msg.request.requests[i]);
-                dev_args->conn                    = args;
-                dev_args->index                   = index;
+
+                dev_args->controller = vec_get(&device_controllers, index);
+                dev_args->tag_count  = msg.request.requests[i].count;
+                dev_args->tags       = malloc(dev_args->tag_count * sizeof(char *));
+                dev_args->conn       = args;
+                dev_args->index      = index;
+
+                for (int j = 0; j < dev_args->tag_count; j++) {
+                    dev_args->tags[j] = strdup(msg.request.requests[i].tags[j]);
+                }
 
                 pthread_t thread;
                 pthread_create(&thread, NULL, device_thread, dev_args);
@@ -381,6 +421,10 @@ void server_run(uint16_t port, char *config_path) {
         }
 
         json_adapt(jbuf, &ConfigAdapter, &config);
+
+#ifdef VERBOSE
+        print_config();
+#endif
 
         free(cbuf);
         fclose(configfd);

@@ -6,6 +6,7 @@
 
 #include <linux/input-event-codes.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 // Unique identifier for devices (provided by linux), May be the mac address
@@ -40,7 +41,7 @@ typedef struct {
 void       *hid_thread(void *arg);
 void        return_device(Controller *c);
 void        forget_device(Controller *c);
-Controller *get_device(char *tag, bool *stop);
+Controller *get_device(char **tags, size_t tag_count, bool *stop);
 void        apply_controller_state(Controller *c, MessageControllerState *state);
 
 #endif
