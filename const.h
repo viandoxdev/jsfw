@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include <time.h>
 
+#ifndef _FSROOT
+#define FSROOT ""
+#else
+#define __str(a) #a
+#define _str(a) __str(a)
+#define FSROOT _str(_FSROOT)
+#endif
+
 extern const struct timespec POLL_DEVICE_INTERVAL;
 extern const int             REQUEST_TIMEOUT;
 extern const char           *DEVICE_DEFAULT_NAME;

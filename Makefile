@@ -2,8 +2,20 @@ Q=@
 CC=gcc
 
 GCCCFLAGS=-Wno-format-truncation 
-CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE -DVERBOSE
+CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
 LDFLAGS=-lm
+
+# The root for /sys and /dev needs to be moved in docker, this should stay empty in most cases
+FSROOT=""
+
+# enable VERBOSE if VERBOSE=1
+ifeq ($(VERBOSE),1)
+	CFLAGS+=-DVERBOSE
+endif
+
+ifdef FSROOT
+	CFLAGS+=-D_FSROOT=$(FSROOT)
+endif
 
 BUILD_DIR=./objects
 BIN=jsfw

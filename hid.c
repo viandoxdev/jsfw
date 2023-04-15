@@ -281,7 +281,7 @@ uint64_t parse_event_name(const char *event) { return atol(event + 5); }
 // Find all available devices and pick up on new ones
 void poll_devices(void) {
     // loop over all entries of /sys/class/input
-    DIR           *input_dir = opendir("/sys/class/input");
+    DIR           *input_dir = opendir(FSROOT "/sys/class/input");
     struct dirent *input;
 
     while ((input = readdir(input_dir)) != NULL) {
@@ -298,7 +298,7 @@ void poll_devices(void) {
         // Open /dev/input/eventXX
         {
             char event_path[64];
-            snprintf(event_path, 64, "/dev/input/%s", input->d_name);
+            snprintf(event_path, 64, FSROOT "/dev/input/%s", input->d_name);
 
             dev.event = open(event_path, O_RDONLY);
 
@@ -372,7 +372,7 @@ void poll_devices(void) {
             char hidraw_path[64];
             {
                 char hidraw_dir_path[256];
-                snprintf(hidraw_dir_path, 256, "/sys/class/input/%s/device/device/hidraw", input->d_name);
+                snprintf(hidraw_dir_path, 256, FSROOT "/sys/class/input/%s/device/device/hidraw", input->d_name);
 
                 DIR           *hidraw_dir = opendir(hidraw_dir_path);
                 struct dirent *hidraw     = NULL;
@@ -387,7 +387,7 @@ void poll_devices(void) {
                     goto skip;
                 }
 
-                snprintf(hidraw_path, 64, "/dev/%s", hidraw->d_name);
+                snprintf(hidraw_path, 64, FSROOT "/dev/%s", hidraw->d_name);
 
                 closedir(hidraw_dir);
             }

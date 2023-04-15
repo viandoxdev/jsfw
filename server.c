@@ -88,6 +88,8 @@ static sigset_t      empty_sigset;
     if (sigaction(sig, &(struct sigaction){{SIG_IGN}}, NULL) != 0)                                                               \
     printf("SERVER:  can't ignore " #sig ".\n")
 
+static void print_config() __attribute__((unused));
+
 static void print_config() {
     printf("SERVER: Config\n");
     printf("  retry_delay: %fs\n", (double)(config.request_timeout) / 1000.0);

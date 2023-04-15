@@ -103,6 +103,8 @@ static const JSONAdapter ConfigAdapter = {
     .size       = sizeof(ClientConfig),
 };
 
+static void print_config() __attribute__((unused));
+
 // Print the current config, for debugging purposes
 static void print_config() {
     printf("CLIENT: Config\n");
@@ -282,7 +284,7 @@ void setup_devices(void) {
     no_info.code              = NoMessage;
 
     for (int i = 0; i < config.slot_count; i++) {
-        int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+        int fd = open(FSROOT "/dev/uinput", O_WRONLY | O_NONBLOCK);
         if (fd < 0) {
             perror("CLIENT: Can't open /dev/uinput, aborting now");
             exit(1);
