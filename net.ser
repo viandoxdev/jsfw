@@ -1,0 +1,119 @@
+// Abs -> { whatever: u16, field1: { a: (invalid)[^1] }, field2: A[1] }
+
+// AbsArr -> { whatever: u16, field1: { a: (invalid)[^1] }, field2: A[1] }&[]
+// AbsArrArr -> { whatever: u16, field1: { a: (invalid)[^1] }, field2: A[1] }&[]&[][4]
+
+// A -> { a: (invalid)[^1] }
+
+// AA -> { a: (invalid)[^1] }[1]
+
+// RBASIC -> (invalid)
+// RM1 -> (invalid)
+// RM2 -> (invalid)
+// RM3 -> (invalid)
+
+// R1 -> (invalid)&[4]&[]
+// R2 -> (invalid)&[4]
+// R3 -> (invalid)&[4]
+// R4 -> (invalid)
+// R5 -> (invalid)
+
+// SA -> { field: { field: SA } }
+// SC -> { field: SC&[] }
+// Node -> { data: u8, children: Node&[] }
+// Recur -> { field: Recur }
+// SB -> { field: { field: SB } }
+
+// bool -> bool
+// char -> char
+// i16 -> i16
+// i32 -> i32
+// i64 -> i64
+// i8 -> i8
+// u16 -> u16
+// u32 -> u32
+// u64 -> u64
+// u8 -> u8
+
+// Struct Layout: S2
+//   field[0].field.len align(2) size(2)
+//   field[1].field.len align(2) size(2)
+//   field[0].field.data align(0) size(0)
+//   field[1].field.data align(0) size(0)
+// Struct Layout: SC
+//   field.len align(2) size(2)
+//   field.data align(0) size(0)
+// Struct Layout: Node
+//   children.len align(2) size(2)
+//   data align(1) size(1)
+//   children.data align(0) size(0)
+// Struct Layout: S1
+//   field.len align(1) size(1)
+//   field.data align(0) size(0)
+// Struct Layout: Abs
+//   whatever align(2) size(2)
+// Struct Layout: S3
+//   field.len align(2) size(2)
+//   field.data align(0) size(0)
+// Struct Layout: Rel
+//   a align(2) size(2)
+
+struct Abs {
+    id: u16,
+    min: u32,
+    max: u32,
+    fuzz: u32,
+    flat: u32,
+    res: u32,
+}
+
+struct Rel {
+    id: u16,
+}
+
+struct Key {
+    id: u16,
+}
+
+const ABS_CNT = 64;
+const REL_CNT = 16;
+const KEY_CNT = 768;
+
+struct Tag {
+    name: char[],
+}
+
+messages Device {
+    Info {
+        slot: u8,
+        index: u8,
+
+        abs: Abs[^ABS_CNT],
+        rel: Rel[^REL_CNT],
+        key: Key[^KEY_CNT],
+    }
+    Report {
+        slot: u8,
+        index: u8,
+
+        abs: u32[^ABS_CNT],
+        rel: u32[^REL_CNT],
+        key: u8[^KEY_CNT],
+    }
+    ControllerState {
+        index: u16,
+        led: u8[3],
+        small_rumble: u8,
+        big_rumble: u8,
+        flash_on: u8,
+        flash_off: u8,
+    }
+    #[versioned]
+    Request {
+        requests: Tag[][],
+        request_count: u16,
+    }
+    Destroy {
+        index: u16,
+    }
+}
