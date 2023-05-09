@@ -30,7 +30,7 @@ typedef struct {
     uint64_t          id;
     char             *name;
     DeviceMap         mapping;
-    MessageDeviceInfo device_info;
+    DeviceInfo device_info;
 } PhysicalDevice;
 
 typedef struct {
@@ -42,6 +42,6 @@ void *hid_thread(void *arg);
 void  return_device(Controller *c);
 void  forget_device(Controller *c);
 bool  get_device(char **tags, size_t tag_count, bool *stop, Controller *res, uint8_t *index);
-void  apply_controller_state(Controller *c, MessageControllerState *state);
+void  apply_controller_state(Controller *c, DeviceControllerState *state);
 
 #endif

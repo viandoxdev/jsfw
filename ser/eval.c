@@ -11,7 +11,7 @@
 
 #define PRIMITIF_TO(name, al) \
     const TypeObject PRIMITIF_##name = {.kind = TypePrimitif, .align = _ALIGN_##al, .type.primitif = Primitif_##name}
-PRIMITIF_TO(u8, 2);
+PRIMITIF_TO(u8, 1);
 PRIMITIF_TO(u16, 2);
 PRIMITIF_TO(u32, 4);
 PRIMITIF_TO(u64, 8);
@@ -444,7 +444,7 @@ static uint64_t get_ast_number_value(EvaluationContext *ctx, AstNumber number) {
             // If the constant is invalid we make up a value to continue checking for errors
             // (Since it is invalid there already has been at least one and we know this code
             // can't go to the next stage)
-            return c->valid ? c->valid : 0;
+            return c->valid ? c->value : 0;
         } else {
             // This constant doesn't exist: raise an error and return dummy value to continue
             vec_push(&ctx->errors, err_unknown(number.token.span, ATConstant, ident));

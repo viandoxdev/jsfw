@@ -195,6 +195,10 @@ void write_struct(Writer *w, StructObject *obj) {
     wt_format(w, "} %.*s;\n\n", obj->name.len, obj->name.ptr);
 }
 
+void write_align(Writer *w, const char *var, const Alignment align, size_t indent) {
+    wt_format(w, "%*s%s = (byte*)(((((uintptr_t)%s - 1) >> %u) + 1) << %u);\n", indent, "", var, var, align.po2, align.po2);
+}
+
 void write_accessor(Writer *w, TypeObject *base_type, FieldAccessor fa, bool ptr) {
     if (fa.indices.len == 0)
         return;
@@ -245,6 +249,37 @@ void write_accessor(Writer *w, TypeObject *base_type, FieldAccessor fa, bool ptr
     }
 }
 
+bool is_field_accessor_heap_array(FieldAccessor fa, TypeObject *base_type) {
+    if (fa.indices.len == 0)
+        return base_type->kind == TypeArray && base_type->type.array.heap;
+
+    // In the case of a heap array the last index will choose between length and data,
+    // but since we only care about the array
+    fa.indices.len--;
+
+    TypeObject *t = base_type;
+    for (size_t i = 0; i < fa.indices.len; i++) {
+        uint64_t index = fa.indices.data[i];
+
+        if (t->kind == TypeStruct) {
+            StructObject *st = (StructObject *)&t->type.struct_;
+            t = st->fields.data[index].type;
+        } else if (t->kind == TypeArray) {
+            if (t->type.array.sizing == SizingMax) {
+                if (index == 0) {
+                    return false;
+                } else {
+                    t = t->type.array.type;
+                }
+            } else {
+                t = t->type.array.type;
+            }
+        }
+    }
+
+    return t->kind == TypeArray && t->type.array.heap;
+}
+
 void write_type_serialization(
     Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth
 ) {
@@ -275,14 +310,15 @@ void write_type_serialization(
 
         for (; i < layout->fields.len; i++) {
             FieldAccessor farr = layout->fields.data[i];
-            wt_format(w, "%*sfor(size_t i = 0; i < %s", indent, "", base);
             FieldAccessor flen = field_accessor_clone(&farr);
             // Access the length instead of data
             flen.indices.data[flen.indices.len - 1] = 0;
+
+            wt_format(w, "%*sfor(size_t i = 0; i < %s", indent, "", base);
             write_accessor(w, layout->type, flen, ptr);
             field_accessor_drop(flen);
             char *vname = msprintf("e%lu", depth);
-            wt_format(w, "; i++) {\n%*stypeof(%s", indent, "", base);
+            wt_format(w, "; i++) {\n%*stypeof(%s", indent + INDENT, "", base);
             write_accessor(w, layout->type, farr, ptr);
             wt_format(w, "[i]) %s = %s", vname, base);
             write_accessor(w, layout->type, farr, ptr);
@@ -303,7 +339,7 @@ void write_type_serialization(
             wt_format(w, "%*s}\n", indent, "");
             free(vname);
         }
-        wt_format(w, "%*sbuf = (byte*)(((uintptr_t)buf - %u) & -%u);\n", indent, "", align.mask, align.value);
+        write_align(w, "buf", align, indent);
     } else {
         offset += calign_to(al, align);
         wt_format(w, "%*sbuf += %lu;\n", indent, "", offset);
@@ -346,10 +382,20 @@ void write_type_deserialization(
 
         for (; i < layout->fields.len; i++) {
             FieldAccessor farr = layout->fields.data[i];
-            wt_format(w, "%*sfor(size_t i = 0; i < %s", indent, "", base);
             FieldAccessor flen = field_accessor_clone(&farr);
             // Access the length instead of data
             flen.indices.data[flen.indices.len - 1] = 0;
+
+            if (is_field_accessor_heap_array(farr, layout->type)) {
+                wt_format(w, "%*s%s", indent, "", base);
+                write_accessor(w, layout->type, farr, ptr);
+                wt_format(w, " = malloc(%s", base);
+                write_accessor(w, layout->type, flen, ptr);
+                wt_format(w, " * sizeof(typeof(*%s", base);
+                write_accessor(w, layout->type, farr, ptr);
+                wt_format(w, ")));\n");
+            }
+            wt_format(w, "%*sfor(size_t i = 0; i < %s", indent, "", base);
             write_accessor(w, layout->type, flen, ptr);
             field_accessor_drop(flen);
             char *vname = msprintf("e%lu", depth);
@@ -374,24 +420,86 @@ void write_type_deserialization(
             wt_format(w, "%*s}\n", indent, "");
             free(vname);
         }
-        wt_format(w, "%*sbuf = (byte*)(((uintptr_t)buf - %u) & -%u);\n", indent, "", align.mask, align.value);
+        write_align(w, "buf", align, indent);
     } else {
         offset += calign_to(al, align);
         wt_format(w, "%*sbuf += %lu;\n", indent, "", offset);
     }
 }
 
+int write_type_free(Writer *w, const char *base, TypeObject *type, size_t indent, size_t depth) {
+    if (type->kind == TypePrimitif) {
+        return 0;
+    } else if (type->kind == TypeArray) {
+        BufferedWriter b = buffered_writer_init();
+        Writer *w2 = (Writer *)&b;
+
+        int total = 0;
+
+        wt_format(w2, "%*sfor(size_t i = 0; i < ", indent, "");
+        if (type->type.array.sizing == SizingMax) {
+            wt_format(w2, "%s.len; i++) {\n", base);
+            wt_format(w2, "%*stypeof(%s.data[i]) e%lu = %s.data[i];\n", indent + INDENT, "", base, depth, base);
+        } else {
+            wt_format(w2, "%lu; i++) {\n", type->type.array.size);
+            wt_format(w2, "%*stypeof(%s[i]) e%lu = %s[i];\n", indent + INDENT, "", base, depth, base);
+        }
+
+        char *new_base = msprintf("e%lu", depth);
+        total += write_type_free(w2, new_base, type->type.array.type, indent + INDENT, depth + 1);
+        free(new_base);
+        wt_format(w2, "%*s}\n", indent, "");
+
+        if (total > 0) {
+            wt_write(w, b.buf.data, b.buf.len);
+        }
+        buffered_writer_drop(b);
+
+        if (type->type.array.heap) {
+            wt_format(w, "%*sfree(%s.data);\n", indent, "", base);
+            total++;
+        }
+
+        return total;
+    } else if (type->kind == TypeStruct) {
+        StructObject *s = (StructObject *)&type->type.struct_;
+        int total = 0;
+
+        for (size_t i = 0; i < s->fields.len; i++) {
+            Field f = s->fields.data[i];
+            char *new_base = msprintf("%s.%.*s", base, f.name.len, f.name.ptr);
+            total += write_type_free(w, new_base, f.type, indent, depth);
+            free(new_base);
+        }
+
+        return total;
+    }
+
+    return 0;
+}
+
 void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
+    char *uc_name = snake_case_to_screaming_snake_case((StringSlice){.ptr = name, .len = strlen(name)});
     wt_format(
         header,
         "// Generated file, do not edit (its not like it'll explode if you do, but its better not to)\n"
+        "#ifndef %s_H\n"
+        "#define %s_H\n"
         "#include <stdint.h>\n"
         "#include <stdlib.h>\n"
         "#include <stdbool.h>\n"
         "\n"
         "typedef unsigned char byte;\n"
+        "typedef uint64_t MsgMagic;\n"
         "\n"
+        "#define MSG_MAGIC_SIZE sizeof(MsgMagic)\n"
+        "static const MsgMagic MSG_MAGIC_START = 0xCAFEF00DBEEFDEAD;\n"
+        "static const MsgMagic MSG_MAGIC_END = 0xF00DBEEFCAFEDEAD;\n"
+        "\n",
+        uc_name,
+        uc_name
     );
+    free(uc_name);
     wt_format(
         source,
         "// Generated file, do not edit (its not like it'll explode if you do, but its better not to)\n"
@@ -407,7 +515,16 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
         MessagesObject msgs = p->messages.data[i];
 
         wt_format(header, "// %.*s\n\n", msgs.name.len, msgs.name.ptr);
-        wt_format(header, "typedef enum %.*sTag {\n", msgs.name.len, msgs.name.ptr);
+        wt_format(
+            header,
+            "typedef enum %.*sTag {\n%*s%.*sTagNone = 0,\n",
+            msgs.name.len,
+            msgs.name.ptr,
+            INDENT,
+            "",
+            msgs.name.len,
+            msgs.name.ptr
+        );
         for (size_t j = 0; j < msgs.messages.len; j++) {
             wt_format(
                 header,
@@ -418,7 +535,7 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 msgs.name.ptr,
                 msgs.messages.data[j].name.len,
                 msgs.messages.data[j].name.ptr,
-                j
+                j + 1
             );
         }
         wt_format(header, "} %.*sTag;\n\n", msgs.name.len, msgs.name.ptr);
@@ -477,6 +594,15 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
             msgs.name.len,
             msgs.name.ptr
         );
+        wt_format(
+            header,
+            "// Free the message (created by msg_%s_deserialize)\n"
+            "void msg_%s_free(%.*sMessage *msg);\n",
+            name,
+            name,
+            msgs.name.len,
+            msgs.name.ptr
+        );
 
         char *tag_type = msprintf("%.*sTag", msgs.name.len, msgs.name.ptr);
         PointerVec message_tos = vec_init();
@@ -509,8 +635,13 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 msgs.name.ptr
             );
 
-            wt_format(source, "%*sbyte *base_buf = buf;\n%*s%s tag = msg->tag;\n", INDENT, "", INDENT, "", tag_type);
-            wt_format(source, "%*sswitch(tag) {\n", INDENT, "");
+            wt_format(source, "%*sconst byte *base_buf = buf;\n", INDENT, "");
+            wt_format(source, "%*sif(len < 2 * MSG_MAGIC_SIZE)\n", INDENT, "");
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
+            wt_format(source, "%*s*(MsgMagic*)buf = MSG_MAGIC_START;\n", INDENT, "");
+            wt_format(source, "%*sbuf += MSG_MAGIC_SIZE;\n", INDENT, "");
+            wt_format(source, "%*sswitch(msg->tag) {\n", INDENT, "");
+            wt_format(source, "%*scase %sNone:\n%*sbreak;\n", INDENT, "", tag_type, INDENT * 2, "");
 
             for (size_t j = 0; j < msgs.messages.len; j++) {
                 MessageObject m = msgs.messages.data[j];
@@ -541,7 +672,10 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 free(snake_case_name);
             }
             wt_format(source, "%*s}\n", INDENT, "");
-            wt_format(source, "%*sbuf = (byte*)(((uintptr_t)buf - %u) & -%u);\n", INDENT, "", ALIGN_8.mask, ALIGN_8.value);
+            wt_format(source, "%*s*(MsgMagic*)buf = MSG_MAGIC_END;\n", INDENT, "");
+            wt_format(source, "%*sbuf += MSG_MAGIC_SIZE;\n", INDENT, "");
+            wt_format(source, "%*sif(buf > base_buf + len)\n", INDENT, "");
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
             wt_format(source, "%*sreturn (int)(buf - base_buf);\n", INDENT, "");
             wt_format(source, "}\n");
         }
@@ -555,8 +689,16 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 msgs.name.ptr
             );
 
-            wt_format(source, "%*sconst byte *base_buf = buf;\n%*s%s tag = *(uint16_t*)buf;\n", INDENT, "", INDENT, "", tag_type);
+            wt_format(source, "%*sconst byte *base_buf = buf;\n", INDENT, "");
+            wt_format(source, "%*sif(len < 2 * MSG_MAGIC_SIZE)\n", INDENT, "");
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
+            wt_format(source, "%*sif(*(MsgMagic*)buf != MSG_MAGIC_START)\n", INDENT, "");
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
+            wt_format(source, "%*sbuf += MSG_MAGIC_SIZE;\n", INDENT, "");
+            wt_format(source, "%*s%s tag = *(uint16_t*)buf;\n", INDENT, "", tag_type);
             wt_format(source, "%*sswitch(tag) {\n", INDENT, "");
+            wt_format(source, "%*scase %sNone:\n%*sbreak;\n", INDENT, "", tag_type, INDENT * 2, "");
+
 
             for (size_t j = 0; j < msgs.messages.len; j++) {
                 MessageObject m = msgs.messages.data[j];
@@ -579,19 +721,12 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                     0
                 );
                 if (m.attributes & Attr_versioned) {
-                    wt_format(
-                        source,
-                        "%*sif(msg->%s._version != %luUL) {\n%*sprintf(\"Mismatched message version: peers aren't the same "
-                        "version.\\n\");\n%*s}\n",
-                        INDENT * 2,
-                        "",
-                        snake_case_name,
-                        msgs.version,
-                        INDENT * 3,
-                        "",
-                        INDENT * 2,
-                        ""
-                    );
+                    wt_format(source, "%*sif(msg->%s._version != %luUL) {\n", INDENT * 2, "", snake_case_name, msgs.version);
+                    wt_format(source, "%*sprintf(\"Mismatched version: peers aren't the same version", INDENT * 3, "");
+                    wt_format(source, ", expected %lu got %%lu.\\n\", msg->%s._version);\n", msgs.version, snake_case_name);
+                    wt_format(source, "%*smsg_%s_free(msg);\n", INDENT * 3, "", name);
+                    wt_format(source, "%*sreturn -1;\n", INDENT * 3, "");
+                    wt_format(source, "%*s}\n", INDENT * 2, "");
                 }
                 wt_format(source, "%*sbreak;\n%*s}\n", INDENT * 2, "", INDENT, "");
 
@@ -599,7 +734,40 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 free(snake_case_name);
             }
             wt_format(source, "%*s}\n", INDENT, "");
+            wt_format(source, "%*sif(*(MsgMagic*)buf != MSG_MAGIC_END) {\n", INDENT, "");
+            wt_format(source, "%*smsg_%s_free(msg);\n", INDENT * 2, "", name);
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
+            wt_format(source, "%*s}\n", INDENT, "");
+            wt_format(source, "%*sbuf += MSG_MAGIC_SIZE;\n", INDENT, "");
+            wt_format(source, "%*sif(buf > base_buf + len) {\n", INDENT, "");
+            wt_format(source, "%*smsg_%s_free(msg);\n", INDENT * 2, "", name);
+            wt_format(source, "%*sreturn -1;\n", INDENT * 2, "");
+            wt_format(source, "%*s}\n", INDENT, "");
             wt_format(source, "%*sreturn (int)(buf - base_buf);\n", INDENT, "");
+            wt_format(source, "}\n");
+        }
+
+        {
+            wt_format(source, "\nvoid msg_%s_free(%.*sMessage *msg) {\n", name, msgs.name.len, msgs.name.ptr);
+
+            wt_format(source, "%*sswitch(msg->tag) {\n", INDENT, "");
+            wt_format(source, "%*scase %sNone:\n%*sbreak;\n", INDENT, "", tag_type, INDENT * 2, "");
+
+            for (size_t j = 0; j < msgs.messages.len; j++) {
+                MessageObject m = msgs.messages.data[j];
+                TypeObject *mtype = message_tos.data[j];
+
+                char *snake_case_name = pascal_to_snake_case(m.name);
+                char *base = msprintf("msg->%s", snake_case_name);
+
+                wt_format(source, "%*scase %s%.*s: {\n", INDENT, "", tag_type, m.name.len, m.name.ptr);
+                write_type_free(source, base, mtype, INDENT * 2, 0);
+                wt_format(source, "%*sbreak;\n%*s}\n", INDENT * 2, "", INDENT, "");
+
+                free(base);
+                free(snake_case_name);
+            }
+            wt_format(source, "%*s}\n", INDENT, "");
             wt_format(source, "}\n");
         }
 
@@ -616,6 +784,8 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
         free(tag_type);
         free(name);
     }
+
+    wt_format(header, "#endif\n");
 }
 
 typedef struct {

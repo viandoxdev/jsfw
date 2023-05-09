@@ -1,434 +1,286 @@
+// Generated file, do not edit (its not like it'll explode if you do, but its better not to)
 #include "net.h"
-
-#include "util.h"
-
-#include <stdbool.h>
 #include <stdio.h>
-#include <string.h>
 
-// Deserialize the message in buf, buf must be at least 4 aligned. Returns -1 on error, otherwise returns 0
-// and writes result to dst
-int msg_deserialize(const uint8_t *buf, size_t len, Message *restrict dst) {
-    {
-        if (len <= MAGIC_SIZE) {
-            return -1;
-        }
-
-        if (*(MAGIC_TYPE *)buf != MAGIC_BEG) {
-            printf("NET:     No magic in message\n");
-            return -1;
-        }
-
-        buf += MAGIC_SIZE;
-        len -= MAGIC_SIZE;
-    }
-    // Decrement len so that it becomes the len of the data without the code.
-    if (len-- < 1)
+int msg_device_serialize(byte *buf, size_t len, DeviceMessage *msg) {
+    const byte *base_buf = buf;
+    if(len < 2 * MSG_MAGIC_SIZE)
         return -1;
-    // This ensures that only a byte is read instead of a full enum value
-    uint8_t     code_byte = buf[0];
-    MessageCode code      = (MessageCode)code_byte;
-    uint32_t    size      = 0;
-
-    uint16_t abs, rel, key, *buf16;
-    uint8_t  index, slot;
-
-    switch (code) {
-    case DeviceInfo:
-        if (len < 7)
-            return -1;
-        slot  = buf[2];
-        index = buf[3];
-        // buf + 4: a byte for, code, padding, slot, index
-        buf16 = (uint16_t *)(buf + 4);
-        abs   = buf16[0];
-        rel   = buf16[1];
-        key   = buf16[2];
-        buf += 12;
-        if (MSS_DEVICE_INFO(abs, rel, key) > len)
-            return -1;
-
-        dst->device_info.code      = code;
-        dst->device_info.slot      = slot;
-        dst->device_info.index     = index;
-        dst->device_info.abs_count = abs;
-        dst->device_info.rel_count = rel;
-        dst->device_info.key_count = key;
-
-        // SOA in c but serialized as AOS
-        for (int i = 0; i < abs; i++) {
-            // buf + 4: 2 bytes for id and 2 bytes of padding
-            uint32_t *buf32 = (uint32_t *)(buf + 4);
-
-            dst->device_info.abs_id[i]   = *(uint16_t *)buf;
-            dst->device_info.abs_min[i]  = buf32[0];
-            dst->device_info.abs_max[i]  = buf32[1];
-            dst->device_info.abs_fuzz[i] = buf32[2];
-            dst->device_info.abs_flat[i] = buf32[3];
-            dst->device_info.abs_res[i]  = buf32[4];
-
+    *(MsgMagic*)buf = MSG_MAGIC_START;
+    buf += MSG_MAGIC_SIZE;
+    switch(msg->tag) {
+    case DeviceTagNone:
+        break;
+    case DeviceTagInfo: {
+        *(uint16_t *)buf = DeviceTagInfo;
+        *(uint16_t *)&buf[2] = msg->info.key.len;
+        *(uint8_t *)&buf[4] = msg->info.slot;
+        *(uint8_t *)&buf[5] = msg->info.index;
+        *(uint8_t *)&buf[6] = msg->info.abs.len;
+        *(uint8_t *)&buf[7] = msg->info.rel.len;
+        buf += 8;
+        for(size_t i = 0; i < msg->info.abs.len; i++) {
+            typeof(msg->info.abs.data[i]) e0 = msg->info.abs.data[i];
+            *(uint32_t *)&buf[0] = e0.min;
+            *(uint32_t *)&buf[4] = e0.max;
+            *(uint32_t *)&buf[8] = e0.fuzz;
+            *(uint32_t *)&buf[12] = e0.flat;
+            *(uint32_t *)&buf[16] = e0.res;
+            *(uint16_t *)&buf[20] = e0.id;
             buf += 24;
         }
-
-        for (int i = 0; i < rel; i++) {
-            dst->device_info.rel_id[i] = *(uint16_t *)buf;
+        for(size_t i = 0; i < msg->info.rel.len; i++) {
+            typeof(msg->info.rel.data[i]) e0 = msg->info.rel.data[i];
+            *(uint16_t *)&buf[0] = e0.id;
             buf += 2;
         }
-
-        for (int i = 0; i < key; i++) {
-            dst->device_info.key_id[i] = *(uint16_t *)buf;
+        for(size_t i = 0; i < msg->info.key.len; i++) {
+            typeof(msg->info.key.data[i]) e0 = msg->info.key.data[i];
+            *(uint16_t *)&buf[0] = e0.id;
             buf += 2;
         }
-
-        size = MSS_DEVICE_INFO(abs, rel, key) + 1;
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
-    case DeviceReport:
-        if (len < 7)
-            return -1;
-
-        slot  = buf[2];
-        index = buf[3];
-        // buf + 4: a byte for, code, padding, slot and index
-        buf16 = (uint16_t *)(buf + 4);
-        abs   = buf16[0];
-        rel   = buf16[1];
-        key   = buf16[2];
-        buf += 12;
-        if (len < MSS_DEVICE_REPORT(abs, rel, key))
-            return -1;
-
-        dst->device_report.code      = code;
-        dst->device_report.slot      = slot;
-        dst->device_report.index     = index;
-        dst->device_report.abs_count = abs;
-        dst->device_report.rel_count = rel;
-        dst->device_report.key_count = key;
-
-        for (int i = 0; i < abs; i++) {
-            dst->device_report.abs[i] = *(uint32_t *)buf;
+    }
+    case DeviceTagReport: {
+        *(uint16_t *)buf = DeviceTagReport;
+        *(uint16_t *)&buf[2] = msg->report.key.len;
+        *(uint8_t *)&buf[4] = msg->report.slot;
+        *(uint8_t *)&buf[5] = msg->report.index;
+        *(uint8_t *)&buf[6] = msg->report.abs.len;
+        *(uint8_t *)&buf[7] = msg->report.rel.len;
+        buf += 8;
+        for(size_t i = 0; i < msg->report.abs.len; i++) {
+            typeof(msg->report.abs.data[i]) e0 = msg->report.abs.data[i];
+            *(uint32_t *)&buf[0] = e0;
             buf += 4;
         }
-
-        for (int i = 0; i < rel; i++) {
-            dst->device_report.rel[i] = *(uint32_t *)buf;
+        for(size_t i = 0; i < msg->report.rel.len; i++) {
+            typeof(msg->report.rel.data[i]) e0 = msg->report.rel.data[i];
+            *(uint32_t *)&buf[0] = e0;
             buf += 4;
         }
-
-        for (int i = 0; i < key; i++)
-            dst->device_report.key[i] = *(buf++);
-
-        buf += align_4(key) - key;
-
-        size = MSS_DEVICE_REPORT(abs, rel, key) + 1;
+        for(size_t i = 0; i < msg->report.key.len; i++) {
+            typeof(msg->report.key.data[i]) e0 = msg->report.key.data[i];
+            *(uint8_t *)&buf[0] = e0;
+            buf += 1;
+        }
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
-    case ControllerState:
-        if (len < MSS_CONTROLLER_STATE)
-            return -1;
-
-        dst->code                          = code;
-        dst->controller_state.index        = *(uint16_t *)(buf + 2);
-        dst->controller_state.led[0]       = buf[4];
-        dst->controller_state.led[1]       = buf[5];
-        dst->controller_state.led[2]       = buf[6];
-        dst->controller_state.small_rumble = buf[7];
-        dst->controller_state.big_rumble   = buf[8];
-        dst->controller_state.flash_on     = buf[9];
-        dst->controller_state.flash_off    = buf[10];
-        size                               = MSS_CONTROLLER_STATE + 1;
-        buf += size;
+    }
+    case DeviceTagControllerState: {
+        *(uint16_t *)buf = DeviceTagControllerState;
+        *(uint16_t *)&buf[2] = msg->controller_state.index;
+        *(uint8_t *)&buf[4] = msg->controller_state.led[0];
+        *(uint8_t *)&buf[5] = msg->controller_state.led[1];
+        *(uint8_t *)&buf[6] = msg->controller_state.led[2];
+        *(uint8_t *)&buf[7] = msg->controller_state.small_rumble;
+        *(uint8_t *)&buf[8] = msg->controller_state.big_rumble;
+        *(uint8_t *)&buf[9] = msg->controller_state.flash_on;
+        *(uint8_t *)&buf[10] = msg->controller_state.flash_off;
+        buf += 16;
         break;
-    case Request: {
-        if (len < 3)
-            return -1;
-
-        dst->code                  = code;
-        dst->request.request_count = *(uint16_t *)(buf + 2);
-        buf += 4; // 1 bytes for code, 1 byte for padding and 2 bytes for count
-
-        int      count = dst->request.request_count;
-        TagList *reqs  = malloc(count * sizeof(TagList));
-        // The length of the message, will be updated as we read more.
-        int expected_len = 3;
-
-        for (int i = 0; i < dst->request.request_count; i++) {
-            expected_len += 2;
-            if (len < expected_len) {
-                return -1;
-            }
-
-            TagList *tags = &reqs[i];
-            tags->count   = *(uint16_t *)buf;
-            tags->tags    = malloc(tags->count * sizeof(char *));
+    }
+    case DeviceTagRequest: {
+        *(uint16_t *)buf = DeviceTagRequest;
+        msg->request._version = 1UL;
+        *(uint64_t *)&buf[8] = msg->request._version;
+        *(uint16_t *)&buf[16] = msg->request.requests.len;
+        buf += 18;
+        for(size_t i = 0; i < msg->request.requests.len; i++) {
+            typeof(msg->request.requests.data[i]) e0 = msg->request.requests.data[i];
+            *(uint16_t *)&buf[0] = e0.tags.len;
             buf += 2;
-
-            for (int j = 0; j < tags->count; j++) {
-                expected_len += 2;
-                if (len < expected_len) {
-                    return -1;
-                }
-
-                uint16_t str_len = *(uint16_t *)buf;
+            for(size_t i = 0; i < e0.tags.len; i++) {
+                typeof(e0.tags.data[i]) e1 = e0.tags.data[i];
+                *(uint16_t *)&buf[0] = e1.name.len;
                 buf += 2;
-
-                expected_len += align_2(str_len);
-                if (len < expected_len) {
-                    return -1;
+                for(size_t i = 0; i < e1.name.len; i++) {
+                    typeof(e1.name.data[i]) e2 = e1.name.data[i];
+                    *(char *)&buf[0] = e2;
+                    buf += 1;
                 }
-
-                char *str    = malloc(str_len + 1);
-                str[str_len] = '\0';
-
-                strncpy(str, (char *)buf, str_len);
-
-                tags->tags[j] = str;
-
-                buf += align_2(str_len);
+                buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
             }
+            buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
         }
-
-        dst->request.requests = reqs;
-        size                  = expected_len + 1;
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
     }
-    case DeviceDestroy:
-        if (len < MSS_DESTROY)
-            return -1;
-
-        dst->code          = code;
-        dst->destroy.index = *(uint16_t *)(buf + 2);
-        size               = MSS_DESTROY + 1;
-        buf += size;
+    case DeviceTagDestroy: {
+        *(uint16_t *)buf = DeviceTagDestroy;
+        *(uint16_t *)&buf[2] = msg->destroy.index;
+        buf += 8;
         break;
-    default:
-        return -1;
     }
-
-    if (align_m(size) + MAGIC_SIZE > len + 1) {
-        return -1;
     }
-
-    // WARN: This is technically bad, but should be ok nonetheless
-    MAGIC_TYPE *mbuf = (MAGIC_TYPE *)align_m((uintptr_t)buf);
-
-    if (*mbuf != MAGIC_END) {
-        printf("NET:     Magic not found\n");
+    *(MsgMagic*)buf = MSG_MAGIC_END;
+    buf += MSG_MAGIC_SIZE;
+    if(buf > base_buf + len)
         return -1;
-    }
-
-    return align_m(size) + 2 * MAGIC_SIZE;
+    return (int)(buf - base_buf);
 }
 
-// Serialize the message msg in buf, buf must be at least 4 aligned. Returns -1 on error (buf not big enough);
-int msg_serialize(uint8_t *restrict buf, size_t len, const Message *msg) {
-    // If len is less than the two magic and the code we can't serialize any message
-    if (len < MAGIC_SIZE * 2 + 1)
+int msg_device_deserialize(const byte *buf, size_t len, DeviceMessage *msg) {
+    const byte *base_buf = buf;
+    if(len < 2 * MSG_MAGIC_SIZE)
         return -1;
-
-    *(MAGIC_TYPE *)buf = MAGIC_BEG;
-    buf += MAGIC_SIZE;
-    len -= MAGIC_SIZE + 1;
-
-    uint16_t abs, rel, key, *buf16;
-    uint32_t size;
-
-    switch (msg->code) {
-    case DeviceInfo:
-        abs = msg->device_info.abs_count;
-        rel = msg->device_info.rel_count;
-        key = msg->device_info.key_count;
-        if (len < MSS_DEVICE_INFO(abs, rel, key))
-            return -1;
-
-        buf[0] = (uint8_t)msg->code;
-        // 1 byte of padding
-        buf[2] = (uint8_t)msg->device_info.slot;
-        buf[3] = (uint8_t)msg->device_info.index;
-        // buf + 4: a byte for, code, padding, slot, index
-        buf16    = (uint16_t *)(buf + 4);
-        buf16[0] = abs;
-        buf16[1] = rel;
-        buf16[2] = key;
-        buf += 12;
-
-        // Back to 4 aligned
-        for (int i = 0; i < abs; i++) {
-            // buf + 4: 2 bytes for id and 2 bytes of padding
-            uint32_t *buf32 = (uint32_t *)(buf + 4);
-
-            *(uint16_t *)buf = msg->device_info.abs_id[i];
-
-            buf32[0] = msg->device_info.abs_min[i];
-            buf32[1] = msg->device_info.abs_max[i];
-            buf32[2] = msg->device_info.abs_fuzz[i];
-            buf32[3] = msg->device_info.abs_flat[i];
-            buf32[4] = msg->device_info.abs_res[i];
-
+    if(*(MsgMagic*)buf != MSG_MAGIC_START)
+        return -1;
+    buf += MSG_MAGIC_SIZE;
+    DeviceTag tag = *(uint16_t*)buf;
+    switch(tag) {
+    case DeviceTagNone:
+        break;
+    case DeviceTagInfo: {
+        msg->tag = DeviceTagInfo;
+        msg->info.key.len = *(uint16_t *)&buf[2];
+        msg->info.slot = *(uint8_t *)&buf[4];
+        msg->info.index = *(uint8_t *)&buf[5];
+        msg->info.abs.len = *(uint8_t *)&buf[6];
+        msg->info.rel.len = *(uint8_t *)&buf[7];
+        buf += 8;
+        for(size_t i = 0; i < msg->info.abs.len; i++) {
+            typeof(&msg->info.abs.data[i]) e0 = &msg->info.abs.data[i];
+            e0->min = *(uint32_t *)&buf[0];
+            e0->max = *(uint32_t *)&buf[4];
+            e0->fuzz = *(uint32_t *)&buf[8];
+            e0->flat = *(uint32_t *)&buf[12];
+            e0->res = *(uint32_t *)&buf[16];
+            e0->id = *(uint16_t *)&buf[20];
             buf += 24;
         }
-        // Still 4 aligned
-        for (int i = 0; i < rel; i++) {
-            *(uint16_t *)buf = msg->device_info.rel_id[i];
+        for(size_t i = 0; i < msg->info.rel.len; i++) {
+            typeof(&msg->info.rel.data[i]) e0 = &msg->info.rel.data[i];
+            e0->id = *(uint16_t *)&buf[0];
             buf += 2;
         }
-
-        for (int i = 0; i < key; i++) {
-            *(uint16_t *)buf = msg->device_info.key_id[i];
+        for(size_t i = 0; i < msg->info.key.len; i++) {
+            typeof(&msg->info.key.data[i]) e0 = &msg->info.key.data[i];
+            e0->id = *(uint16_t *)&buf[0];
             buf += 2;
         }
-
-        size = MSS_DEVICE_INFO(abs, rel, key) + 1;
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
-    case DeviceReport:
-        abs = msg->device_report.abs_count;
-        rel = msg->device_report.rel_count;
-        key = msg->device_report.key_count;
-        if (len < MSS_DEVICE_REPORT(abs, rel, key))
-            return -1;
-
-        buf[0] = (uint8_t)msg->code;
-        // 1 byte of padding
-        buf[2] = msg->device_report.slot;
-        buf[3] = msg->device_report.index;
-        // buf + 4: a byte for, code, padding, slot and index
-        buf16    = (uint16_t *)(buf + 4);
-        buf16[0] = abs;
-        buf16[1] = rel;
-        buf16[2] = key;
-        buf += 12;
-        // We're 4 aligned already
-        for (int i = 0; i < abs; i++) {
-            *(uint32_t *)buf = msg->device_report.abs[i];
+    }
+    case DeviceTagReport: {
+        msg->tag = DeviceTagReport;
+        msg->report.key.len = *(uint16_t *)&buf[2];
+        msg->report.slot = *(uint8_t *)&buf[4];
+        msg->report.index = *(uint8_t *)&buf[5];
+        msg->report.abs.len = *(uint8_t *)&buf[6];
+        msg->report.rel.len = *(uint8_t *)&buf[7];
+        buf += 8;
+        for(size_t i = 0; i < msg->report.abs.len; i++) {
+            typeof(&msg->report.abs.data[i]) e0 = &msg->report.abs.data[i];
+            *e0 = *(uint32_t *)&buf[0];
             buf += 4;
         }
-        // Still 4 aligned
-        for (int i = 0; i < rel; i++) {
-            *(uint32_t *)buf = msg->device_report.rel[i];
+        for(size_t i = 0; i < msg->report.rel.len; i++) {
+            typeof(&msg->report.rel.data[i]) e0 = &msg->report.rel.data[i];
+            *e0 = *(uint32_t *)&buf[0];
             buf += 4;
         }
-        // Doesn't matter since we're writing individual bytes
-        for (int i = 0; i < key; i++)
-            *(buf++) = msg->device_report.key[i];
-
-        size = MSS_DEVICE_REPORT(abs, rel, key) + 1;
-        buf += align_4(key) - key;
+        for(size_t i = 0; i < msg->report.key.len; i++) {
+            typeof(&msg->report.key.data[i]) e0 = &msg->report.key.data[i];
+            *e0 = *(uint8_t *)&buf[0];
+            buf += 1;
+        }
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
-    case ControllerState:
-        if (len < MSS_CONTROLLER_STATE)
-            return -1;
-
-        buf[0] = (uint8_t)msg->code;
-
-        *(uint16_t *)(buf + 2) = msg->controller_state.index;
-
-        buf[4]  = msg->controller_state.led[0];
-        buf[5]  = msg->controller_state.led[1];
-        buf[6]  = msg->controller_state.led[2];
-        buf[7]  = msg->controller_state.small_rumble;
-        buf[8]  = msg->controller_state.big_rumble;
-        buf[9]  = msg->controller_state.flash_on;
-        buf[10] = msg->controller_state.flash_off;
-        size    = MSS_CONTROLLER_STATE + 1;
-        buf += size;
+    }
+    case DeviceTagControllerState: {
+        msg->tag = DeviceTagControllerState;
+        msg->controller_state.index = *(uint16_t *)&buf[2];
+        msg->controller_state.led[0] = *(uint8_t *)&buf[4];
+        msg->controller_state.led[1] = *(uint8_t *)&buf[5];
+        msg->controller_state.led[2] = *(uint8_t *)&buf[6];
+        msg->controller_state.small_rumble = *(uint8_t *)&buf[7];
+        msg->controller_state.big_rumble = *(uint8_t *)&buf[8];
+        msg->controller_state.flash_on = *(uint8_t *)&buf[9];
+        msg->controller_state.flash_off = *(uint8_t *)&buf[10];
+        buf += 16;
         break;
-    case Request: {
-        int expected_len = MSS_REQUEST(msg->request.request_count);
-        if (len < expected_len)
-            return -1;
-
-        buf[0] = (uint8_t)msg->code;
-        buf += 2;
-        *(uint16_t *)buf = msg->request.request_count;
-        buf += 2;
-
-        for (int i = 0; i < msg->request.request_count; i++) {
-
-            uint16_t tag_count = msg->request.requests[i].count;
-            char   **tags      = msg->request.requests[i].tags;
-
-            *(uint16_t *)buf = tag_count;
-
+    }
+    case DeviceTagRequest: {
+        msg->tag = DeviceTagRequest;
+        msg->request._version = *(uint64_t *)&buf[8];
+        msg->request.requests.len = *(uint16_t *)&buf[16];
+        buf += 18;
+        msg->request.requests.data = malloc(msg->request.requests.len * sizeof(typeof(*msg->request.requests.data)));
+        for(size_t i = 0; i < msg->request.requests.len; i++) {
+            typeof(&msg->request.requests.data[i]) e0 = &msg->request.requests.data[i];
+            e0->tags.len = *(uint16_t *)&buf[0];
             buf += 2;
-
-            for (int j = 0; j < tag_count; j++) {
-                int str_len  = strlen(tags[j]);
-                int byte_len = align_2(str_len);
-
-                expected_len += 2 + byte_len;
-                if (len < expected_len) {
-                    return -1;
-                }
-
-                *(uint16_t *)buf = str_len;
+            e0->tags.data = malloc(e0->tags.len * sizeof(typeof(*e0->tags.data)));
+            for(size_t i = 0; i < e0->tags.len; i++) {
+                typeof(&e0->tags.data[i]) e1 = &e0->tags.data[i];
+                e1->name.len = *(uint16_t *)&buf[0];
                 buf += 2;
-
-                strncpy((char *)buf, tags[j], str_len);
-                buf += byte_len;
+                e1->name.data = malloc(e1->name.len * sizeof(typeof(*e1->name.data)));
+                for(size_t i = 0; i < e1->name.len; i++) {
+                    typeof(&e1->name.data[i]) e2 = &e1->name.data[i];
+                    *e2 = *(char *)&buf[0];
+                    buf += 1;
+                }
+                buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
             }
+            buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
         }
-
-        size = expected_len + 1;
-        break;
-    }
-    case DeviceDestroy:
-        if (len < MSS_DESTROY)
+        buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
+        if(msg->request._version != 1UL) {
+            printf("Mismatched version: peers aren't the same version, expected 1 got %lu.\n", msg->request._version);
+            msg_device_free(msg);
             return -1;
-
-        buf[0] = (uint8_t)msg->code;
-
-        *(uint16_t *)(buf + 2) = msg->controller_state.index;
-        size                   = MSS_DESTROY + 1;
-        buf += size;
+        }
         break;
-    default:
-        printf("ERR(msg_serialize): Trying to serialize unknown message of code %d\n", msg->code);
+    }
+    case DeviceTagDestroy: {
+        msg->tag = DeviceTagDestroy;
+        msg->destroy.index = *(uint16_t *)&buf[2];
+        buf += 8;
+        break;
+    }
+    }
+    if(*(MsgMagic*)buf != MSG_MAGIC_END) {
+        msg_device_free(msg);
         return -1;
     }
-
-    if (align_m(size) + MAGIC_SIZE > len) {
+    buf += MSG_MAGIC_SIZE;
+    if(buf > base_buf + len) {
+        msg_device_free(msg);
         return -1;
     }
-
-    MAGIC_TYPE *mbuf = (MAGIC_TYPE *)align_m((uintptr_t)buf);
-
-    *mbuf = MAGIC_END;
-
-    return align_m(size) + MAGIC_SIZE * 2;
+    return (int)(buf - base_buf);
 }
 
-void msg_free(Message *msg) {
-    if (msg->code == Request) {
-        for (int i = 0; i < msg->request.request_count; i++) {
-            for (int j = 0; j < msg->request.requests[i].count; j++) {
-                free(msg->request.requests[i].tags[j]);
-            }
-            free(msg->request.requests[i].tags);
-        }
-        free(msg->request.requests);
+void msg_device_free(DeviceMessage *msg) {
+    switch(msg->tag) {
+    case DeviceTagNone:
+        break;
+    case DeviceTagInfo: {
+        break;
     }
-}
-
-void print_message_buffer(const uint8_t *buf, int len) {
-    bool last_beg = false;
-    for (int i = 0; i < len; i++) {
-        if (i + MAGIC_SIZE <= len) {
-            MAGIC_TYPE magic = *(MAGIC_TYPE *)(&buf[i]);
-            if (magic == MAGIC_BEG) {
-                printf(" \033[32m%08X\033[0m", magic);
-                i += MAGIC_SIZE - 1;
-                last_beg = true;
-                continue;
-            } else if (magic == MAGIC_END) {
-                printf(" \033[32m%08X\033[0m", magic);
-                i += MAGIC_SIZE - 1;
-                continue;
+    case DeviceTagReport: {
+        break;
+    }
+    case DeviceTagControllerState: {
+        break;
+    }
+    case DeviceTagRequest: {
+        for(size_t i = 0; i < msg->request.requests.len; i++) {
+            typeof(msg->request.requests.data[i]) e0 = msg->request.requests.data[i];
+            for(size_t i = 0; i < e0.tags.len; i++) {
+                typeof(e0.tags.data[i]) e1 = e0.tags.data[i];
+                free(e1.name.data);
             }
+            free(e0.tags.data);
         }
-
-        if (last_beg) {
-            last_beg = false;
-            printf(" \033[034m%02X\033[0m", buf[i]);
-        } else {
-            printf(" %02X", buf[i]);
-        }
+        free(msg->request.requests.data);
+        break;
+    }
+    case DeviceTagDestroy: {
+        break;
+    }
     }
 }

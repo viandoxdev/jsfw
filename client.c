@@ -37,13 +37,13 @@ static struct pollfd *socket_poll = &poll_fds[1];
 static int            fifo        = -1;
 static int            sock        = -1;
 // static to avoid having this on the stack because a message is about 2kb in memory
-static Message message;
+static DeviceMessage message;
 
 static Vec devices_fd;
 static Vec devices_info;
 
-static ClientConfig   config;
-static MessageRequest device_request;
+static ClientConfig  config;
+static DeviceRequest device_request;
 
 static void default_fifo_path(void *ptr) { *(char **)ptr = (char *)FIFO_PATH; }
 static void default_retry_delay(void *ptr) { *(struct timespec *)ptr = CONNECTION_RETRY_DELAY; }
@@ -58,17 +58,17 @@ static void default_to_white(void *ptr) {
 }
 
 static const JSONPropertyAdapter ControllerStateAdapterProps[] = {
-    {".led_color", &StringAdapter, offsetof(MessageControllerState, led),          default_to_white,    tsf_hex_to_color   },
-    {".rumble.0",  &NumberAdapter, offsetof(MessageControllerState, small_rumble), default_to_zero_u8,  tsf_num_to_u8_clamp},
-    {".rumble.1",  &NumberAdapter, offsetof(MessageControllerState, big_rumble),   default_to_zero_u8,  tsf_num_to_u8_clamp},
-    {".flash.0",   &NumberAdapter, offsetof(MessageControllerState, flash_on),     default_to_zero_u8,  tsf_num_to_u8_clamp},
-    {".flash.1",   &NumberAdapter, offsetof(MessageControllerState, flash_off),    default_to_zero_u8,  tsf_num_to_u8_clamp},
-    {".index",     &NumberAdapter, offsetof(MessageControllerState, index),        default_to_zero_u32, tsf_num_to_int     }
+    {".led_color", &StringAdapter, offsetof(DeviceControllerState, led),          default_to_white,    tsf_hex_to_color   },
+    {".rumble.0",  &NumberAdapter, offsetof(DeviceControllerState, small_rumble), default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".rumble.1",  &NumberAdapter, offsetof(DeviceControllerState, big_rumble),   default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".flash.0",   &NumberAdapter, offsetof(DeviceControllerState, flash_on),     default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".flash.1",   &NumberAdapter, offsetof(DeviceControllerState, flash_off),    default_to_zero_u8,  tsf_num_to_u8_clamp},
+    {".index",     &NumberAdapter, offsetof(DeviceControllerState, index),        default_to_zero_u32, tsf_num_to_int     }
 };
 static const JSONAdapter ControllerStateAdapter = {
     .props      = (JSONPropertyAdapter *)ControllerStateAdapterProps,
     .prop_count = sizeof(ControllerStateAdapterProps) / sizeof(JSONPropertyAdapter),
-    .size       = sizeof(MessageControllerState),
+    .size       = sizeof(DeviceControllerState),
 };
 
 static const JSONPropertyAdapter ControllerAdapterProps[] = {
@@ -127,12 +127,12 @@ static void print_config() {
 
 void destroy_devices(void) {
     for (int i = 0; i < config.slot_count; i++) {
-        int                fd   = *(int *)vec_get(&devices_fd, i);
-        MessageDeviceInfo *info = vec_get(&devices_info, i);
+        int         fd   = *(int *)vec_get(&devices_fd, i);
+        DeviceInfo *info = vec_get(&devices_info, i);
 
-        if (info->code == DeviceInfo) {
+        if (info->tag == DeviceTagInfo) {
             ioctl(fd, UI_DEV_DESTROY);
-            info->code = NoMessage;
+            info->tag = DeviceTagNone;
         }
     }
 }
@@ -142,8 +142,8 @@ bool device_exists(int index) {
         return false;
     }
 
-    MessageDeviceInfo *info = vec_get(&devices_info, index);
-    return info->code == DeviceInfo;
+    DeviceInfo *info = vec_get(&devices_info, index);
+    return info->tag == DeviceTagInfo;
 }
 
 void device_destroy(int slot) {
@@ -153,15 +153,15 @@ void device_destroy(int slot) {
 
     int fd = *(int *)vec_get(&devices_fd, slot);
 
-    MessageDeviceInfo *info = vec_get(&devices_info, slot);
+    DeviceInfo *info = vec_get(&devices_info, slot);
 
-    if (info->code == DeviceInfo) {
+    if (info->tag == DeviceTagInfo) {
         ioctl(fd, UI_DEV_DESTROY);
-        info->code = NoMessage;
+        info->tag = DeviceTagNone;
     }
 }
 
-void device_init(MessageDeviceInfo *dev) {
+void device_init(DeviceInfo *dev) {
     if (dev->slot >= devices_info.len) {
         printf("CLIENT: Got wrong device index\n");
         return;
@@ -172,35 +172,36 @@ void device_init(MessageDeviceInfo *dev) {
     int fd = *(int *)vec_get(&devices_fd, dev->slot);
 
     // Abs
-    if (dev->abs_count > 0) {
+    if (dev->abs.len > 0) {
         ioctl(fd, UI_SET_EVBIT, EV_ABS);
-        for (int i = 0; i < dev->abs_count; i++) {
+        for (int i = 0; i < dev->abs.len; i++) {
             struct uinput_abs_setup setup = {0};
 
-            setup.code               = dev->abs_id[i];
-            setup.absinfo.minimum    = dev->abs_min[i];
-            setup.absinfo.maximum    = dev->abs_max[i];
-            setup.absinfo.fuzz       = dev->abs_fuzz[i];
-            setup.absinfo.flat       = dev->abs_flat[i];
-            setup.absinfo.resolution = dev->abs_res[i];
+            Abs abs                  = dev->abs.data[i];
+            setup.code               = abs.id;
+            setup.absinfo.minimum    = abs.min;
+            setup.absinfo.maximum    = abs.max;
+            setup.absinfo.fuzz       = abs.fuzz;
+            setup.absinfo.flat       = abs.flat;
+            setup.absinfo.resolution = abs.res;
             setup.absinfo.value      = 0;
             ioctl(fd, UI_ABS_SETUP, &setup);
         }
     }
 
     // Rel
-    if (dev->rel_count > 0) {
+    if (dev->rel.len > 0) {
         ioctl(fd, UI_SET_EVBIT, EV_REL);
-        for (int i = 0; i < dev->rel_count; i++) {
-            ioctl(fd, UI_SET_RELBIT, dev->rel_id[i]);
+        for (int i = 0; i < dev->rel.len; i++) {
+            ioctl(fd, UI_SET_RELBIT, dev->rel.data[i].id);
         }
     }
 
     // Key
-    if (dev->key_count > 0) {
+    if (dev->key.len > 0) {
         ioctl(fd, UI_SET_EVBIT, EV_KEY);
-        for (int i = 0; i < dev->key_count; i++) {
-            ioctl(fd, UI_SET_KEYBIT, dev->key_id[i]);
+        for (int i = 0; i < dev->key.len; i++) {
+            ioctl(fd, UI_SET_KEYBIT, dev->key.data[i].id);
         }
     }
 
@@ -217,11 +218,11 @@ void device_init(MessageDeviceInfo *dev) {
     ioctl(fd, UI_DEV_SETUP, &setup);
     ioctl(fd, UI_DEV_CREATE);
 
-    MessageDeviceInfo *dst = vec_get(&devices_info, dev->slot);
+    DeviceInfo *dst = vec_get(&devices_info, dev->slot);
 
-    memcpy(dst, dev, sizeof(MessageDeviceInfo));
-    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->slot, ctr->device_name, dev->abs_count,
-           dev->rel_count, dev->key_count);
+    memcpy(dst, dev, sizeof(DeviceInfo));
+    printf("CLIENT: Got device [%d]: '%s' (abs: %d, rel: %d, key: %d)\n", dev->slot, ctr->device_name, dev->abs.len, dev->rel.len,
+           dev->key.len);
 }
 
 // Send an event to uinput, device must exist
@@ -241,33 +242,34 @@ bool device_emit(int index, uint16_t type, uint16_t id, uint32_t value) {
 }
 
 // Update device with report
-void device_handle_report(MessageDeviceReport *report) {
+void device_handle_report(DeviceReport *report) {
     if (!device_exists(report->slot)) {
         printf("CLIENT: [%d] Got report before device info\n", report->slot);
         return;
     }
 
-    MessageDeviceInfo *info = vec_get(&devices_info, report->slot);
+    DeviceInfo *info = vec_get(&devices_info, report->slot);
 
-    if (report->abs_count != info->abs_count || report->rel_count != info->rel_count || report->key_count != info->key_count) {
-        printf("CLIENT: Report doesn't match with device info\n");
+    if (report->abs.len != info->abs.len || report->rel.len != info->rel.len || report->key.len != info->key.len) {
+        printf("CLIENT: Report doesn't match with device info (expected %u/%u/%u, got %u/%u/%u)\n", info->abs.len, info->rel.len,
+               info->key.len, report->abs.len, report->rel.len, report->key.len);
         return;
     }
 
-    for (int i = 0; i < report->abs_count; i++) {
-        if (device_emit(report->slot, EV_ABS, info->abs_id[i], report->abs[i]) != 0) {
+    for (int i = 0; i < report->abs.len; i++) {
+        if (device_emit(report->slot, EV_ABS, info->abs.data[i].id, report->abs.data[i]) != 0) {
             printf("CLIENT: Error writing abs event to uinput\n");
         }
     }
 
-    for (int i = 0; i < report->rel_count; i++) {
-        if (device_emit(report->slot, EV_REL, info->rel_id[i], report->rel[i]) != 0) {
+    for (int i = 0; i < report->rel.len; i++) {
+        if (device_emit(report->slot, EV_REL, info->rel.data[i].id, report->rel.data[i]) != 0) {
             printf("CLIENT: Error writing rel event to uinput\n");
         }
     }
 
-    for (int i = 0; i < report->key_count; i++) {
-        if (device_emit(report->slot, EV_KEY, info->key_id[i], (uint32_t)(!report->key[i]) - 1) != 0) {
+    for (int i = 0; i < report->key.len; i++) {
+        if (device_emit(report->slot, EV_KEY, info->key.data[i].id, (uint32_t)(!report->key.data[i]) - 1) != 0) {
             printf("CLIENT: Error writing key event to uinput\n");
         }
     }
@@ -278,10 +280,10 @@ void device_handle_report(MessageDeviceReport *report) {
 
 void setup_devices(void) {
     devices_fd   = vec_of(int);
-    devices_info = vec_of(MessageDeviceInfo);
+    devices_info = vec_of(DeviceInfo);
 
-    MessageDeviceInfo no_info = {0};
-    no_info.code              = NoMessage;
+    DeviceInfo no_info = {0};
+    no_info.tag        = DeviceTagNone;
 
     for (int i = 0; i < config.slot_count; i++) {
         int fd = open(FSROOT "/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -350,9 +352,9 @@ void connect_server(void) {
         socket_poll->fd = sock;
         printf("CLIENT: Connected !\n");
 
-        uint8_t buf[2048] __attribute__((aligned(4))) = {0};
+        uint8_t buf[2048] __attribute__((aligned(8))) = {0};
 
-        int len = msg_serialize(buf, 2048, (Message *)&device_request);
+        int len = msg_device_serialize(buf, 2048, (DeviceMessage *)&device_request);
         if (len > 0) {
             if (send(sock, buf, len, 0) > 0) {
                 printf("CLIENT: Sent device request\n");
@@ -382,20 +384,20 @@ void setup_server(char *address, uint16_t port) {
 }
 
 void build_device_request(void) {
-    TagList *reqs = malloc(config.slot_count * sizeof(TagList));
+    device_request.tag           = DeviceTagRequest;
+    device_request.requests.len  = config.slot_count;
+    device_request.requests.data = malloc(config.slot_count * sizeof(TagList));
     for (int i = 0; i < config.slot_count; i++) {
-        TagList *req = &reqs[i];
-        req->count   = config.slots[i].controller_count;
-        req->tags    = malloc(req->count * sizeof(char *));
+        TagList *list   = &device_request.requests.data[i];
+        list->tags.len  = config.slots[i].controller_count;
+        list->tags.data = malloc(list->tags.len * sizeof(typeof(*list->tags.data)));
 
-        for (int j = 0; j < req->count; j++) {
-            req->tags[j] = config.slots[i].controllers[j].tag;
+        for (int j = 0; j < list->tags.len; j++) {
+            char *name                   = config.slots[i].controllers[j].tag;
+            list->tags.data[j].name.len  = strlen(name);
+            list->tags.data[j].name.data = name;
         }
     }
-
-    device_request.code          = Request;
-    device_request.request_count = config.slot_count;
-    device_request.requests      = reqs;
 }
 
 void client_run(char *address, uint16_t port, char *config_path) {
@@ -431,10 +433,10 @@ void client_run(char *address, uint16_t port, char *config_path) {
     setup_devices();
     setup_server(address, port);
 
-    uint8_t buf[2048] __attribute__((aligned(4)));
+    uint8_t buf[2048] __attribute__((aligned(8)));
     uint8_t json_buf[2048] __attribute__((aligned(8)));
 
-    while (1) {
+    while (true) {
         int rc = poll(poll_fds, 2, -1);
         if (rc < 0) {
             perror("CLIENT: Error on poll");
@@ -451,11 +453,11 @@ void client_run(char *address, uint16_t port, char *config_path) {
                 if (rc < 0) {
                     printf("CLIENT: Error when parsing fifo message as json (%s at index %lu)\n", json_strerr(), json_errloc());
                 } else {
-                    MessageControllerState msg;
-                    msg.code = ControllerState;
+                    DeviceControllerState msg;
+                    msg.tag = DeviceTagControllerState;
                     json_adapt(json_buf, &ControllerStateAdapter, &msg);
 
-                    int len = msg_serialize(buf, 2048, (Message *)&msg);
+                    int len = msg_device_serialize(buf, 2048, (DeviceMessage *)&msg);
                     if (len > 0) {
                         if (send(sock, buf, len, 0) > 0) {
                             printf("CLIENT: Sent controller state: #%02x%02x%02x flash: (%d, %d) rumble: "
@@ -479,7 +481,7 @@ void client_run(char *address, uint16_t port, char *config_path) {
                 continue;
             }
 
-            int msg_len = msg_deserialize(buf, len, &message);
+            int msg_len = msg_device_deserialize(buf, len, &message);
             // We've got data from the server
             if (msg_len < 0) {
                 recv(sock, buf, 2048, 0);
@@ -500,15 +502,15 @@ void client_run(char *address, uint16_t port, char *config_path) {
 
             recv(sock, buf, msg_len, 0);
 
-            if (message.code == DeviceInfo) {
-                if (device_exists(message.device_info.slot)) {
+            if (message.tag == DeviceTagInfo) {
+                if (device_exists(message.info.slot)) {
                     printf("CLIENT: Got more than one device info for same device\n");
                 }
 
-                device_init((MessageDeviceInfo *)&message);
-            } else if (message.code == DeviceReport) {
-                device_handle_report((MessageDeviceReport *)&message);
-            } else if (message.code == DeviceDestroy) {
+                device_init((DeviceInfo *)&message);
+            } else if (message.tag == DeviceTagReport) {
+                device_handle_report((DeviceReport *)&message);
+            } else if (message.tag == DeviceTagDestroy) {
                 device_destroy(message.destroy.index);
                 printf("CLIENT: Lost device %d\n", message.destroy.index);
             } else {

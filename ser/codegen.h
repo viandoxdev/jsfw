@@ -41,6 +41,7 @@ void wt_format(Writer *w, const char *fmt, ...);
 // Define the structs of a program in the correct order (respecting direct dependencies)
 void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObject *));
 char *pascal_to_snake_case(StringSlice str);
+char *snake_case_to_screaming_snake_case(StringSlice str);
 
 // Check if c is aligned to alignment to
 static inline bool calign_is_aligned(CurrentAlignment c, Alignment to) {

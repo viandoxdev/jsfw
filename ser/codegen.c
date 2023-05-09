@@ -166,3 +166,19 @@ char *pascal_to_snake_case(StringSlice str) {
 
     return res.data;
 }
+
+char *snake_case_to_screaming_snake_case(StringSlice str) {
+    CharVec res = vec_init();
+    vec_grow(&res, str.len + 4);
+    for(size_t i = 0; i < str.len; i++) {
+        char c = str.ptr[i];
+        if('a' <= c && c <= 'z') {
+            vec_push(&res, c - 'a' + 'A');
+        } else {
+            vec_push(&res, c);
+        }
+    }
+    vec_push(&res, '\0');
+
+    return res.data;
+}
