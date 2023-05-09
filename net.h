@@ -29,19 +29,19 @@ typedef struct Rel {
     uint16_t id;
 } Rel;
 
-typedef struct Tag {
-    struct {
-        uint16_t len;
-        char *data;
-    } name;
-} Tag;
-
 typedef struct TagList {
     struct {
         uint16_t len;
         struct Tag *data;
     } tags;
 } TagList;
+
+typedef struct Tag {
+    struct {
+        uint16_t len;
+        char *data;
+    } name;
+} Tag;
 
 // Device
 

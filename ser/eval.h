@@ -70,6 +70,8 @@ typedef enum {
 struct StructObject {
     StringSlice name;
     AnyVec fields;
+    // Used by codegen_c
+    bool has_funcs;
 };
 
 typedef union {
@@ -97,6 +99,8 @@ VECTOR_IMPL(Field, FieldVec, field);
 typedef struct {
     StringSlice name;
     FieldVec fields;
+    // Used by codegen_c
+    bool has_funcs;
 } StructObject;
 
 void struct_drop(StructObject s);

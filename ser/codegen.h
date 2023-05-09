@@ -29,17 +29,22 @@ typedef struct {
     FILE *fd;
 } FileWriter;
 
+typedef struct {
+    Writer w;
+} NullWriter;
+
 BufferedWriter buffered_writer_init();
 void buffered_writer_drop(BufferedWriter w);
 FileWriter file_writer_init(const char *path);
 FileWriter file_writer_from_fd(FILE *fd);
 void file_writer_drop(FileWriter w);
+NullWriter null_writer_init();
 
 void wt_write(Writer *w, const char *data, size_t len);
 void wt_format(Writer *w, const char *fmt, ...);
 
 // Define the structs of a program in the correct order (respecting direct dependencies)
-void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObject *));
+void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObject *, void *), void *user_data);
 char *pascal_to_snake_case(StringSlice str);
 char *snake_case_to_screaming_snake_case(StringSlice str);
 

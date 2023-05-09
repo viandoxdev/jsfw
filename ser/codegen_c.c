@@ -3,6 +3,8 @@
 #include "vector.h"
 #include "vector_impl.h"
 
+#include <stddef.h>
+
 #define INDENT 4
 
 typedef enum {
@@ -183,7 +185,7 @@ void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent
     _vec_modifier_drop(modifiers);
 }
 
-void write_struct(Writer *w, StructObject *obj) {
+void write_struct(Writer *w, StructObject *obj, void *_user_data) {
     wt_format(w, "typedef struct %.*s {\n", obj->name.len, obj->name.ptr);
 
     for (size_t i = 0; i < obj->fields.len; i++) {
@@ -281,7 +283,7 @@ bool is_field_accessor_heap_array(FieldAccessor fa, TypeObject *base_type) {
 }
 
 void write_type_serialization(
-    Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth
+    Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth, bool always_inline
 ) {
     if (layout->fields.len == 0)
         return;
@@ -290,6 +292,14 @@ void write_type_serialization(
     size_t offset = al.offset;
 
     offset += calign_to(al, layout->fields.data[0].type->align);
+
+    if (layout->type->kind == TypeStruct && layout->type->type.struct_.has_funcs && !always_inline) {
+        char *name = pascal_to_snake_case(layout->type->type.struct_.name);
+        char *deref = ptr ? "*" : "";
+        wt_format(w, "%*sbuf += %s_serialize(%s%s, &buf[%lu]);\n", indent, "", name, deref, base, offset);
+        free(name);
+        return;
+    }
 
     size_t i = 0;
     for (; i < layout->fields.len && layout->fields.data[i].size != 0; i++) {
@@ -334,7 +344,8 @@ void write_type_serialization(
                 (CurrentAlignment){.align = farr.type->align, .offset = 0},
                 layouts,
                 indent + INDENT,
-                depth + 1
+                depth + 1,
+                false
             );
             wt_format(w, "%*s}\n", indent, "");
             free(vname);
@@ -347,7 +358,7 @@ void write_type_serialization(
 }
 
 void write_type_deserialization(
-    Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth
+    Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth, bool always_inline
 ) {
     if (layout->fields.len == 0)
         return;
@@ -356,6 +367,14 @@ void write_type_deserialization(
     size_t offset = al.offset;
 
     offset += calign_to(al, layout->fields.data[0].type->align);
+
+    if (layout->type->kind == TypeStruct && layout->type->type.struct_.has_funcs && !always_inline) {
+        char *name = pascal_to_snake_case(layout->type->type.struct_.name);
+        char *ref = ptr ? "" : "&";
+        wt_format(w, "%*sbuf += %s_deserialize(%s%s, &buf[%lu]);\n", indent, "", name, ref, base, offset);
+        free(name);
+        return;
+    }
 
     char *deref = "";
     if (layout->type->kind == TypePrimitif) {
@@ -415,7 +434,8 @@ void write_type_deserialization(
                 (CurrentAlignment){.align = farr.type->align, .offset = 0},
                 layouts,
                 indent + INDENT,
-                depth + 1
+                depth + 1,
+                false
             );
             wt_format(w, "%*s}\n", indent, "");
             free(vname);
@@ -427,7 +447,7 @@ void write_type_deserialization(
     }
 }
 
-int write_type_free(Writer *w, const char *base, TypeObject *type, size_t indent, size_t depth) {
+int write_type_free(Writer *w, const char *base, TypeObject *type, Hashmap *layouts, size_t indent, size_t depth, bool always_inline) {
     if (type->kind == TypePrimitif) {
         return 0;
     } else if (type->kind == TypeArray) {
@@ -446,7 +466,7 @@ int write_type_free(Writer *w, const char *base, TypeObject *type, size_t indent
         }
 
         char *new_base = msprintf("e%lu", depth);
-        total += write_type_free(w2, new_base, type->type.array.type, indent + INDENT, depth + 1);
+        total += write_type_free(w2, new_base, type->type.array.type, layouts, indent + INDENT, depth + 1, false);
         free(new_base);
         wt_format(w2, "%*s}\n", indent, "");
 
@@ -465,10 +485,24 @@ int write_type_free(Writer *w, const char *base, TypeObject *type, size_t indent
         StructObject *s = (StructObject *)&type->type.struct_;
         int total = 0;
 
+        if(type->type.struct_.has_funcs && !always_inline) {
+            char *name = pascal_to_snake_case(s->name);
+            wt_format(w, "%*s%s_free(%s);\n", indent, "", name, base);
+            free(name);
+
+            Layout *layout = hashmap_get(layouts, &(Layout){.type = type});
+            assert(layout != NULL, "No layout for type that has funcs defined");
+            for(size_t i = 0; i < layout->fields.len; i++) {
+                if(layout->fields.data[i].size == 0) total++;
+            }
+
+            return total;
+        }
+
         for (size_t i = 0; i < s->fields.len; i++) {
             Field f = s->fields.data[i];
             char *new_base = msprintf("%s.%.*s", base, f.name.len, f.name.ptr);
-            total += write_type_free(w, new_base, f.type, indent, depth);
+            total += write_type_free(w, new_base, f.type, layouts, indent, depth, false);
             free(new_base);
         }
 
@@ -476,6 +510,52 @@ int write_type_free(Writer *w, const char *base, TypeObject *type, size_t indent
     }
 
     return 0;
+}
+
+void write_struct_func_decl(Writer *w, StructObject *obj, void *_user_data) {
+    obj->has_funcs = true;
+
+    StringSlice sname = obj->name;
+    char *snake_case_name = pascal_to_snake_case(sname);
+    wt_format(w, "__attribute__((unused)) static int %s_serialize(struct %.*s val, byte *buf);\n", snake_case_name, sname.len, sname.ptr);
+    wt_format(w, "__attribute__((unused)) static int %s_deserialize(struct %.*s *val, const byte *buf);\n", snake_case_name, sname.len, sname.ptr);
+    wt_format(w, "__attribute__((unused)) static void %s_free(struct %.*s val);\n", snake_case_name, sname.len, sname.ptr);
+    free(snake_case_name);
+}
+
+void write_struct_func(Writer *w, StructObject *obj, void *user_data) {
+    Hashmap *layouts = user_data;
+    // Retreive original TypeObject pointer from struct object pointer.
+    TypeObject *t = (void *)((byte *)obj - offsetof(struct TypeObject, type));
+
+    Layout *layout = hashmap_get(layouts, &(Layout){.type = t});
+    assert(layout != NULL, "No layout found for struct");
+
+    StringSlice sname = obj->name;
+    char *snake_case_name = pascal_to_snake_case(sname);
+    wt_format(w, "static int %s_serialize(struct %.*s val, byte *buf) {\n", snake_case_name, sname.len, sname.ptr);
+    wt_format(w, "%*sbyte * base_buf = buf;\n", INDENT, "");
+    write_type_serialization(w, "val", false, layout, (CurrentAlignment){.offset = 0, .align = t->align}, layouts, INDENT, 0, true);
+    wt_format(w, "%*sreturn (int)(buf - base_buf);\n", INDENT, "");
+    wt_format(w, "}\n");
+
+    wt_format(w, "static int %s_deserialize(struct %.*s *val, const byte *buf) {\n", snake_case_name, sname.len, sname.ptr);
+    wt_format(w, "%*sconst byte * base_buf = buf;\n", INDENT, "");
+    write_type_deserialization(w, "val", true, layout, (CurrentAlignment){.offset = 0, .align = t->align}, layouts, INDENT, 0, true);
+    wt_format(w, "%*sreturn (int)(buf - base_buf);\n", INDENT, "");
+    wt_format(w, "}\n");
+
+    wt_format(w, "static void %s_free(struct %.*s val) {", snake_case_name, sname.len, sname.ptr);
+    BufferedWriter b = buffered_writer_init();
+    int f = write_type_free((Writer*)&b, "val", t, layouts, INDENT, 0, true);
+    if(f > 0) {
+        wt_format(w, "\n%.*s}\n\n", b.buf.len, b.buf.data);
+    } else {
+        wt_format(w, " }\n\n");
+    }
+    buffered_writer_drop(b);
+
+    free(snake_case_name);
 }
 
 void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
@@ -509,7 +589,10 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
         name
     );
 
-    define_structs(p, header, write_struct);
+    define_structs(p, header, write_struct, NULL);
+    define_structs(p, source, write_struct_func_decl, NULL);
+    wt_format(source, "\n");
+    define_structs(p, source, write_struct_func, p->layouts);
 
     for (size_t i = 0; i < p->messages.len; i++) {
         MessagesObject msgs = p->messages.data[i];
@@ -664,7 +747,8 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                     (CurrentAlignment){.align = ALIGN_8, .offset = 2},
                     p->layouts,
                     INDENT * 2,
-                    0
+                    0,
+                    false
                 );
                 wt_format(source, "%*sbreak;\n%*s}\n", INDENT * 2, "", INDENT, "");
 
@@ -699,7 +783,6 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
             wt_format(source, "%*sswitch(tag) {\n", INDENT, "");
             wt_format(source, "%*scase %sNone:\n%*sbreak;\n", INDENT, "", tag_type, INDENT * 2, "");
 
-
             for (size_t j = 0; j < msgs.messages.len; j++) {
                 MessageObject m = msgs.messages.data[j];
                 TypeObject *mtype = message_tos.data[j];
@@ -718,7 +801,8 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                     (CurrentAlignment){.align = ALIGN_8, .offset = 2},
                     p->layouts,
                     INDENT * 2,
-                    0
+                    0,
+                    false
                 );
                 if (m.attributes & Attr_versioned) {
                     wt_format(source, "%*sif(msg->%s._version != %luUL) {\n", INDENT * 2, "", snake_case_name, msgs.version);
@@ -761,7 +845,7 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
                 char *base = msprintf("msg->%s", snake_case_name);
 
                 wt_format(source, "%*scase %s%.*s: {\n", INDENT, "", tag_type, m.name.len, m.name.ptr);
-                write_type_free(source, base, mtype, INDENT * 2, 0);
+                write_type_free(source, base, mtype, p->layouts, INDENT * 2, 0, false);
                 wt_format(source, "%*sbreak;\n%*s}\n", INDENT * 2, "", INDENT, "");
 
                 free(base);

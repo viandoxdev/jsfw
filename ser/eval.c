@@ -579,6 +579,7 @@ static TypeObject *resolve_type(EvaluationContext *ctx, SpannedStringSlice name)
             value->kind = TypeStruct;
             value->type.struct_.fields = *(AnyVec *)&fields;
             value->type.struct_.name = name.slice;
+            value->type.struct_.has_funcs = false;
             value->align.value = 0;
             hashmap_set(ctx->typedefs, &(TypeDef){.name = name.slice, .value = value});
         }

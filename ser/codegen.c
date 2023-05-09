@@ -36,6 +36,8 @@ static void file_writer_format(void *w, const char *fmt, va_list args) {
     FileWriter *fw = (FileWriter *)w;
     vfprintf(fw->fd, fmt, args);
 }
+static void null_writer_write(void *w, const char *data, size_t len) { }
+static void null_writer_format(void *w, const char *fmt, va_list args) { }
 
 BufferedWriter buffered_writer_init() {
     CharVec buf = vec_init();
@@ -52,6 +54,9 @@ FileWriter file_writer_from_fd(FILE *fd) {
     return (FileWriter){.w.write = file_writer_write, .w.format = file_writer_format, .fd = fd};
 }
 void file_writer_drop(FileWriter w) { fclose(w.fd); }
+NullWriter null_writer_init() {
+    return (NullWriter){.w.write = null_writer_write, .w.format = null_writer_format};
+}
 
 void wt_write(Writer *w, const char *data, size_t len) { w->write(w, data, len); }
 void wt_format(Writer *w, const char *fmt, ...) {
@@ -82,7 +87,7 @@ int struct_object_compare(const void *a, const void *b) {
     return strncmp(sa->name.ptr, sb->name.ptr, len);
 }
 
-void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObject *obj)) {
+void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObject *obj, void *), void * user_data) {
     Hashmap *dependencies = hashmap_init(strdeps_hash, strdeps_equal, strdeps_drop, sizeof(StructDependencies));
 
     TypeDef *td = NULL;
@@ -132,7 +137,7 @@ void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObjec
 
         for (size_t i = 0; i < to_define.len; i++) {
             StructObject *s = to_define.data[i];
-            define(w, s);
+            define(w, s, user_data);
             hashmap_delete(dependencies, &(StructDependencies){.obj = s});
         }
         pass++;

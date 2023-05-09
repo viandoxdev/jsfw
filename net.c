@@ -2,6 +2,134 @@
 #include "net.h"
 #include <stdio.h>
 
+__attribute__((unused)) static int abs_serialize(struct Abs val, byte *buf);
+__attribute__((unused)) static int abs_deserialize(struct Abs *val, const byte *buf);
+__attribute__((unused)) static void abs_free(struct Abs val);
+__attribute__((unused)) static int key_serialize(struct Key val, byte *buf);
+__attribute__((unused)) static int key_deserialize(struct Key *val, const byte *buf);
+__attribute__((unused)) static void key_free(struct Key val);
+__attribute__((unused)) static int rel_serialize(struct Rel val, byte *buf);
+__attribute__((unused)) static int rel_deserialize(struct Rel *val, const byte *buf);
+__attribute__((unused)) static void rel_free(struct Rel val);
+__attribute__((unused)) static int tag_list_serialize(struct TagList val, byte *buf);
+__attribute__((unused)) static int tag_list_deserialize(struct TagList *val, const byte *buf);
+__attribute__((unused)) static void tag_list_free(struct TagList val);
+__attribute__((unused)) static int tag_serialize(struct Tag val, byte *buf);
+__attribute__((unused)) static int tag_deserialize(struct Tag *val, const byte *buf);
+__attribute__((unused)) static void tag_free(struct Tag val);
+
+static int abs_serialize(struct Abs val, byte *buf) {
+    byte * base_buf = buf;
+    *(uint32_t *)&buf[0] = val.min;
+    *(uint32_t *)&buf[4] = val.max;
+    *(uint32_t *)&buf[8] = val.fuzz;
+    *(uint32_t *)&buf[12] = val.flat;
+    *(uint32_t *)&buf[16] = val.res;
+    *(uint16_t *)&buf[20] = val.id;
+    buf += 24;
+    return (int)(buf - base_buf);
+}
+static int abs_deserialize(struct Abs *val, const byte *buf) {
+    const byte * base_buf = buf;
+    val->min = *(uint32_t *)&buf[0];
+    val->max = *(uint32_t *)&buf[4];
+    val->fuzz = *(uint32_t *)&buf[8];
+    val->flat = *(uint32_t *)&buf[12];
+    val->res = *(uint32_t *)&buf[16];
+    val->id = *(uint16_t *)&buf[20];
+    buf += 24;
+    return (int)(buf - base_buf);
+}
+static void abs_free(struct Abs val) { }
+
+static int key_serialize(struct Key val, byte *buf) {
+    byte * base_buf = buf;
+    *(uint16_t *)&buf[0] = val.id;
+    buf += 2;
+    return (int)(buf - base_buf);
+}
+static int key_deserialize(struct Key *val, const byte *buf) {
+    const byte * base_buf = buf;
+    val->id = *(uint16_t *)&buf[0];
+    buf += 2;
+    return (int)(buf - base_buf);
+}
+static void key_free(struct Key val) { }
+
+static int rel_serialize(struct Rel val, byte *buf) {
+    byte * base_buf = buf;
+    *(uint16_t *)&buf[0] = val.id;
+    buf += 2;
+    return (int)(buf - base_buf);
+}
+static int rel_deserialize(struct Rel *val, const byte *buf) {
+    const byte * base_buf = buf;
+    val->id = *(uint16_t *)&buf[0];
+    buf += 2;
+    return (int)(buf - base_buf);
+}
+static void rel_free(struct Rel val) { }
+
+static int tag_list_serialize(struct TagList val, byte *buf) {
+    byte * base_buf = buf;
+    *(uint16_t *)&buf[0] = val.tags.len;
+    buf += 2;
+    for(size_t i = 0; i < val.tags.len; i++) {
+        typeof(val.tags.data[i]) e0 = val.tags.data[i];
+        buf += tag_serialize(e0, &buf[0]);
+    }
+    buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+    return (int)(buf - base_buf);
+}
+static int tag_list_deserialize(struct TagList *val, const byte *buf) {
+    const byte * base_buf = buf;
+    val->tags.len = *(uint16_t *)&buf[0];
+    buf += 2;
+    val->tags.data = malloc(val->tags.len * sizeof(typeof(*val->tags.data)));
+    for(size_t i = 0; i < val->tags.len; i++) {
+        typeof(&val->tags.data[i]) e0 = &val->tags.data[i];
+        buf += tag_deserialize(e0, &buf[0]);
+    }
+    buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+    return (int)(buf - base_buf);
+}
+static void tag_list_free(struct TagList val) {
+    for(size_t i = 0; i < val.tags.len; i++) {
+        typeof(val.tags.data[i]) e0 = val.tags.data[i];
+        tag_free(e0);
+    }
+    free(val.tags.data);
+}
+
+static int tag_serialize(struct Tag val, byte *buf) {
+    byte * base_buf = buf;
+    *(uint16_t *)&buf[0] = val.name.len;
+    buf += 2;
+    for(size_t i = 0; i < val.name.len; i++) {
+        typeof(val.name.data[i]) e0 = val.name.data[i];
+        *(char *)&buf[0] = e0;
+        buf += 1;
+    }
+    buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+    return (int)(buf - base_buf);
+}
+static int tag_deserialize(struct Tag *val, const byte *buf) {
+    const byte * base_buf = buf;
+    val->name.len = *(uint16_t *)&buf[0];
+    buf += 2;
+    val->name.data = malloc(val->name.len * sizeof(typeof(*val->name.data)));
+    for(size_t i = 0; i < val->name.len; i++) {
+        typeof(&val->name.data[i]) e0 = &val->name.data[i];
+        *e0 = *(char *)&buf[0];
+        buf += 1;
+    }
+    buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+    return (int)(buf - base_buf);
+}
+static void tag_free(struct Tag val) {
+    free(val.name.data);
+}
+
 int msg_device_serialize(byte *buf, size_t len, DeviceMessage *msg) {
     const byte *base_buf = buf;
     if(len < 2 * MSG_MAGIC_SIZE)
@@ -21,23 +149,15 @@ int msg_device_serialize(byte *buf, size_t len, DeviceMessage *msg) {
         buf += 8;
         for(size_t i = 0; i < msg->info.abs.len; i++) {
             typeof(msg->info.abs.data[i]) e0 = msg->info.abs.data[i];
-            *(uint32_t *)&buf[0] = e0.min;
-            *(uint32_t *)&buf[4] = e0.max;
-            *(uint32_t *)&buf[8] = e0.fuzz;
-            *(uint32_t *)&buf[12] = e0.flat;
-            *(uint32_t *)&buf[16] = e0.res;
-            *(uint16_t *)&buf[20] = e0.id;
-            buf += 24;
+            buf += abs_serialize(e0, &buf[0]);
         }
         for(size_t i = 0; i < msg->info.rel.len; i++) {
             typeof(msg->info.rel.data[i]) e0 = msg->info.rel.data[i];
-            *(uint16_t *)&buf[0] = e0.id;
-            buf += 2;
+            buf += rel_serialize(e0, &buf[0]);
         }
         for(size_t i = 0; i < msg->info.key.len; i++) {
             typeof(msg->info.key.data[i]) e0 = msg->info.key.data[i];
-            *(uint16_t *)&buf[0] = e0.id;
-            buf += 2;
+            buf += key_serialize(e0, &buf[0]);
         }
         buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
@@ -89,20 +209,7 @@ int msg_device_serialize(byte *buf, size_t len, DeviceMessage *msg) {
         buf += 18;
         for(size_t i = 0; i < msg->request.requests.len; i++) {
             typeof(msg->request.requests.data[i]) e0 = msg->request.requests.data[i];
-            *(uint16_t *)&buf[0] = e0.tags.len;
-            buf += 2;
-            for(size_t i = 0; i < e0.tags.len; i++) {
-                typeof(e0.tags.data[i]) e1 = e0.tags.data[i];
-                *(uint16_t *)&buf[0] = e1.name.len;
-                buf += 2;
-                for(size_t i = 0; i < e1.name.len; i++) {
-                    typeof(e1.name.data[i]) e2 = e1.name.data[i];
-                    *(char *)&buf[0] = e2;
-                    buf += 1;
-                }
-                buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
-            }
-            buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+            buf += tag_list_serialize(e0, &buf[0]);
         }
         buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
@@ -142,23 +249,15 @@ int msg_device_deserialize(const byte *buf, size_t len, DeviceMessage *msg) {
         buf += 8;
         for(size_t i = 0; i < msg->info.abs.len; i++) {
             typeof(&msg->info.abs.data[i]) e0 = &msg->info.abs.data[i];
-            e0->min = *(uint32_t *)&buf[0];
-            e0->max = *(uint32_t *)&buf[4];
-            e0->fuzz = *(uint32_t *)&buf[8];
-            e0->flat = *(uint32_t *)&buf[12];
-            e0->res = *(uint32_t *)&buf[16];
-            e0->id = *(uint16_t *)&buf[20];
-            buf += 24;
+            buf += abs_deserialize(e0, &buf[0]);
         }
         for(size_t i = 0; i < msg->info.rel.len; i++) {
             typeof(&msg->info.rel.data[i]) e0 = &msg->info.rel.data[i];
-            e0->id = *(uint16_t *)&buf[0];
-            buf += 2;
+            buf += rel_deserialize(e0, &buf[0]);
         }
         for(size_t i = 0; i < msg->info.key.len; i++) {
             typeof(&msg->info.key.data[i]) e0 = &msg->info.key.data[i];
-            e0->id = *(uint16_t *)&buf[0];
-            buf += 2;
+            buf += key_deserialize(e0, &buf[0]);
         }
         buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         break;
@@ -210,22 +309,7 @@ int msg_device_deserialize(const byte *buf, size_t len, DeviceMessage *msg) {
         msg->request.requests.data = malloc(msg->request.requests.len * sizeof(typeof(*msg->request.requests.data)));
         for(size_t i = 0; i < msg->request.requests.len; i++) {
             typeof(&msg->request.requests.data[i]) e0 = &msg->request.requests.data[i];
-            e0->tags.len = *(uint16_t *)&buf[0];
-            buf += 2;
-            e0->tags.data = malloc(e0->tags.len * sizeof(typeof(*e0->tags.data)));
-            for(size_t i = 0; i < e0->tags.len; i++) {
-                typeof(&e0->tags.data[i]) e1 = &e0->tags.data[i];
-                e1->name.len = *(uint16_t *)&buf[0];
-                buf += 2;
-                e1->name.data = malloc(e1->name.len * sizeof(typeof(*e1->name.data)));
-                for(size_t i = 0; i < e1->name.len; i++) {
-                    typeof(&e1->name.data[i]) e2 = &e1->name.data[i];
-                    *e2 = *(char *)&buf[0];
-                    buf += 1;
-                }
-                buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
-            }
-            buf = (byte*)(((((uintptr_t)buf - 1) >> 1) + 1) << 1);
+            buf += tag_list_deserialize(e0, &buf[0]);
         }
         buf = (byte*)(((((uintptr_t)buf - 1) >> 3) + 1) << 3);
         if(msg->request._version != 1UL) {
@@ -270,11 +354,7 @@ void msg_device_free(DeviceMessage *msg) {
     case DeviceTagRequest: {
         for(size_t i = 0; i < msg->request.requests.len; i++) {
             typeof(msg->request.requests.data[i]) e0 = msg->request.requests.data[i];
-            for(size_t i = 0; i < e0.tags.len; i++) {
-                typeof(e0.tags.data[i]) e1 = e0.tags.data[i];
-                free(e1.name.data);
-            }
-            free(e0.tags.data);
+            tag_list_free(e0);
         }
         free(msg->request.requests.data);
         break;
