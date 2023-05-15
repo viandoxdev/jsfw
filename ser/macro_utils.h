@@ -22,6 +22,7 @@
 #define SND(a, b, ...) b
 #define FST(a, ...) a
 #define CAT(a, b) a##b
+#define STR(a) #a
 
 #define PROBE() ~, 1
 #define IS_PROBE(...) SND(__VA_ARGS__, 0)

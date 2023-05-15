@@ -8,6 +8,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define INDENT 4
+
+#define MSG_MAGIC_START 0xCAFEF00DBEEFDEADUL
+#define MSG_MAGIC_END 0xF00DBEEFCAFEDEADUL
+
 // Struct used to define the relative alignment when working with structs
 typedef struct {
     Alignment align;

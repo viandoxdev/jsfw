@@ -5,8 +5,6 @@
 
 #include <stddef.h>
 
-#define INDENT 4
-
 typedef enum {
     MTPointer,
     MTArray,
@@ -34,9 +32,9 @@ static inline const char *array_size_type(uint64_t size) {
     }
 }
 
-void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent);
+static void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent);
 // Wrte the *base* type type with indentation
-void write_type(Writer *w, TypeObject *type, uint32_t indent) {
+static void write_type(Writer *w, TypeObject *type, uint32_t indent) {
     if (type->kind == TypePrimitif) {
 #define _case(x, s) \
     case Primitif_##x: \
@@ -145,7 +143,7 @@ void write_type(Writer *w, TypeObject *type, uint32_t indent) {
 //   7.
 //       result = "char bar"
 
-void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent) {
+static void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent) {
     TypeObject *type = f.type;
     ModifierVec modifiers = vec_init();
     TypeObject *current = type;
@@ -185,7 +183,7 @@ void write_field(Writer *w, Field f, Modifier *mods, size_t len, uint32_t indent
     _vec_modifier_drop(modifiers);
 }
 
-void write_struct(Writer *w, StructObject *obj, void *_user_data) {
+static void write_struct(Writer *w, StructObject *obj, void *_user_data) {
     wt_format(w, "typedef struct %.*s {\n", obj->name.len, obj->name.ptr);
 
     for (size_t i = 0; i < obj->fields.len; i++) {
@@ -197,11 +195,11 @@ void write_struct(Writer *w, StructObject *obj, void *_user_data) {
     wt_format(w, "} %.*s;\n\n", obj->name.len, obj->name.ptr);
 }
 
-void write_align(Writer *w, const char *var, const Alignment align, size_t indent) {
+static void write_align(Writer *w, const char *var, const Alignment align, size_t indent) {
     wt_format(w, "%*s%s = (byte*)(((((uintptr_t)%s - 1) >> %u) + 1) << %u);\n", indent, "", var, var, align.po2, align.po2);
 }
 
-void write_accessor(Writer *w, TypeObject *base_type, FieldAccessor fa, bool ptr) {
+static void write_accessor(Writer *w, TypeObject *base_type, FieldAccessor fa, bool ptr) {
     if (fa.indices.len == 0)
         return;
 
@@ -251,7 +249,7 @@ void write_accessor(Writer *w, TypeObject *base_type, FieldAccessor fa, bool ptr
     }
 }
 
-bool is_field_accessor_heap_array(FieldAccessor fa, TypeObject *base_type) {
+static bool is_field_accessor_heap_array(FieldAccessor fa, TypeObject *base_type) {
     if (fa.indices.len == 0)
         return base_type->kind == TypeArray && base_type->type.array.heap;
 
@@ -282,7 +280,7 @@ bool is_field_accessor_heap_array(FieldAccessor fa, TypeObject *base_type) {
     return t->kind == TypeArray && t->type.array.heap;
 }
 
-void write_type_serialization(
+static void write_type_serialization(
     Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth, bool always_inline
 ) {
     if (layout->fields.len == 0)
@@ -357,7 +355,7 @@ void write_type_serialization(
     }
 }
 
-void write_type_deserialization(
+static void write_type_deserialization(
     Writer *w, const char *base, bool ptr, Layout *layout, CurrentAlignment al, Hashmap *layouts, size_t indent, size_t depth, bool always_inline
 ) {
     if (layout->fields.len == 0)
@@ -447,7 +445,7 @@ void write_type_deserialization(
     }
 }
 
-int write_type_free(Writer *w, const char *base, TypeObject *type, Hashmap *layouts, size_t indent, size_t depth, bool always_inline) {
+static int write_type_free(Writer *w, const char *base, TypeObject *type, Hashmap *layouts, size_t indent, size_t depth, bool always_inline) {
     if (type->kind == TypePrimitif) {
         return 0;
     } else if (type->kind == TypeArray) {
@@ -512,7 +510,7 @@ int write_type_free(Writer *w, const char *base, TypeObject *type, Hashmap *layo
     return 0;
 }
 
-void write_struct_func_decl(Writer *w, StructObject *obj, void *_user_data) {
+static void write_struct_func_decl(Writer *w, StructObject *obj, void *_user_data) {
     obj->has_funcs = true;
 
     StringSlice sname = obj->name;
@@ -523,7 +521,7 @@ void write_struct_func_decl(Writer *w, StructObject *obj, void *_user_data) {
     free(snake_case_name);
 }
 
-void write_struct_func(Writer *w, StructObject *obj, void *user_data) {
+static void write_struct_func(Writer *w, StructObject *obj, void *user_data) {
     Hashmap *layouts = user_data;
     // Retreive original TypeObject pointer from struct object pointer.
     TypeObject *t = (void *)((byte *)obj - offsetof(struct TypeObject, type));
@@ -562,7 +560,7 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
     char *uc_name = snake_case_to_screaming_snake_case((StringSlice){.ptr = name, .len = strlen(name)});
     wt_format(
         header,
-        "// Generated file, do not edit (its not like it'll explode if you do, but its better not to)\n"
+        "// Generated file\n"
         "#ifndef %s_H\n"
         "#define %s_H\n"
         "#include <stdint.h>\n"
@@ -573,16 +571,18 @@ void codegen_c(Writer *header, Writer *source, const char *name, Program *p) {
         "typedef uint64_t MsgMagic;\n"
         "\n"
         "#define MSG_MAGIC_SIZE sizeof(MsgMagic)\n"
-        "static const MsgMagic MSG_MAGIC_START = 0xCAFEF00DBEEFDEAD;\n"
-        "static const MsgMagic MSG_MAGIC_END = 0xF00DBEEFCAFEDEAD;\n"
+        "static const MsgMagic MSG_MAGIC_START = 0x%016lX;\n"
+        "static const MsgMagic MSG_MAGIC_END = 0x%016lX;\n"
         "\n",
         uc_name,
-        uc_name
+        uc_name,
+        MSG_MAGIC_START,
+        MSG_MAGIC_END
     );
     free(uc_name);
     wt_format(
         source,
-        "// Generated file, do not edit (its not like it'll explode if you do, but its better not to)\n"
+        "// Generated file\n"
         "#include \"%s.h\"\n"
         "#include <stdio.h>\n"
         "\n",

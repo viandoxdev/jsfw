@@ -1,5 +1,6 @@
 #include "ast.h"
 #include "codegen_c.h"
+#include "codegen_python.h"
 #include "hashmap.h"
 #include "lexer.h"
 #include "log.h"
@@ -16,15 +17,31 @@ void abort_error(uint32_t error_count) {
 
 typedef enum {
     BackendC,
+    BackendPython,
 } Backend;
 
+static Hashmap *backend_map = NULL;
+
+typedef struct {
+    StringSlice name;
+    Backend b;
+} BackendString;
+
+impl_hashmap_delegate(backend, BackendString, string_slice, name);
+
 Backend parse_backend(const char *b) {
-    if (strcmp(b, "c") == 0) {
-        return BackendC;
-    } else {
-        log_error("Couldn't parse requested backend: got %s expected one of 'c'.", b);
+    if (backend_map == NULL) {
+        backend_map = hashmap_init(backend_hash, backend_equal, NULL, sizeof(BackendString));
+        hashmap_set(backend_map, &(BackendString){.name = STRING_SLICE("c"), .b = BackendC});
+        hashmap_set(backend_map, &(BackendString){.name = STRING_SLICE("python"), .b = BackendPython});
+    }
+
+    BackendString *backend = hashmap_get(backend_map, &(BackendString){.name.ptr = b, .name.len = strlen(b)});
+    if (backend == NULL) {
+        log_error("Unknown backend '%s'", b);
         exit(1);
     }
+    return backend->b;
 }
 
 int main(int argc, char **argv) {
@@ -102,10 +119,25 @@ int main(int argc, char **argv) {
         free(header_path);
         break;
     }
+    case BackendPython: {
+        FileWriter source = file_writer_init(output);
+
+        codegen_python((Writer *)&source, &evaluation_result.program);
+
+        file_writer_drop(source);
+        break;
+    }
+    default:
+        log_error("What the fuck ?");
+        exit(1);
     }
 
     program_drop(evaluation_result.program);
     ast_drop(parsing_result.ctx);
     vec_drop(lexing_result.tokens);
     source_drop(src);
+
+    if (backend_map != NULL) {
+        hashmap_drop(backend_map);
+    }
 }
