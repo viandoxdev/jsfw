@@ -1179,9 +1179,6 @@ static void resolve_messages(EvaluationContext *ctx) {
                 message.fields = (FieldVec)vec_init();
                 vec_grow(&message.fields, msg.fields.len);
 
-                if (msg.fields.len == 0) {
-                    vec_push(&ctx->errors, err_empty(msg.ident.span, ATMessage, message.name));
-                }
                 for (size_t k = 0; k < msg.fields.len; k++) {
                     Field f;
                     f.name = string_slice_from_token(msg.fields.data[k].name);

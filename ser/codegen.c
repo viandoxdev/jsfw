@@ -154,6 +154,7 @@ void define_structs(Program *p, Writer *w, void (*define)(Writer *w, StructObjec
 char *pascal_to_snake_case(StringSlice str) {
     CharVec res = vec_init();
     vec_grow(&res, str.len + 4);
+    bool was_upper = false;
     for (size_t i = 0; i < str.len; i++) {
         if (i == 0) {
             vec_push(&res, tolower(str.ptr[i]));
@@ -161,9 +162,12 @@ char *pascal_to_snake_case(StringSlice str) {
         }
 
         char c = str.ptr[i];
-        if (isupper(c)) {
+        if (isupper(c) && !was_upper) {
             vec_push(&res, '_');
         }
+
+        was_upper = isupper(c);
+
         vec_push(&res, tolower(c));
     }
 
