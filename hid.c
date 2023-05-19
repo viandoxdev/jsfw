@@ -55,10 +55,10 @@ uniq_t parse_uniq(char uniq[17]) {
 
 // Finish setup of a partially initialized device (set device_info and mapping)
 void setup_device(PhysicalDevice *dev) {
-    dev->device_info.code      = DeviceInfo;
-    dev->device_info.abs_count = 0;
-    dev->device_info.rel_count = 0;
-    dev->device_info.key_count = 0;
+    dev->device_info.tag     = DeviceTagInfo;
+    dev->device_info.abs.len = 0;
+    dev->device_info.rel.len = 0;
+    dev->device_info.key.len = 0;
 
     for (int i = 0; i < ABS_CNT; i++)
         dev->mapping.abs_indices[i] = -1;
@@ -93,26 +93,27 @@ void setup_device(PhysicalDevice *dev) {
                 struct input_absinfo abs;
                 ioctl(dev->event, EVIOCGABS(i), &abs);
 
-                uint16_t index = dev->device_info.abs_count++;
+                uint16_t index = dev->device_info.abs.len++;
 
-                dev->device_info.abs_min[index]  = abs.minimum;
-                dev->device_info.abs_max[index]  = abs.maximum;
-                dev->device_info.abs_fuzz[index] = abs.fuzz;
-                dev->device_info.abs_flat[index] = abs.flat;
-                dev->device_info.abs_res[index]  = abs.resolution;
+                Abs *dev_abs  = &dev->device_info.abs.data[index];
+                dev_abs->min  = abs.minimum;
+                dev_abs->max  = abs.maximum;
+                dev_abs->fuzz = abs.fuzz;
+                dev_abs->flat = abs.flat;
+                dev_abs->res  = abs.resolution;
+                dev_abs->id   = i;
                 // Bidirectional mapping id <-> index
                 // We need this to avoid wasting space in packets because ids are sparse
-                dev->device_info.abs_id[index] = i;
-                dev->mapping.abs_indices[i]    = index;
+                dev->mapping.abs_indices[i] = index;
             } else if (type == EV_REL) {
-                uint16_t index = dev->device_info.rel_count++;
+                uint16_t index = dev->device_info.rel.len++;
 
-                dev->device_info.rel_id[index] = i;
+                dev->device_info.rel.data[index].id = i;
                 dev->mapping.rel_indices[i]    = index;
             } else if (type == EV_KEY) {
-                uint16_t index = dev->device_info.key_count++;
+                uint16_t index = dev->device_info.key.len++;
 
-                dev->device_info.key_id[index] = i;
+                dev->device_info.key.data[index].id = i;
                 dev->mapping.key_indices[i]    = index;
             }
         }
@@ -445,7 +446,7 @@ void poll_devices(void) {
 }
 
 // "Execute" a MessageControllerState: set the led color, rumble and flash using the hidraw interface (Dualshock 4 only)
-void apply_controller_state(Controller *c, MessageControllerState *state) {
+void apply_controller_state(Controller *c, DeviceControllerState *state) {
     if (c->ctr.ps4_hidraw && c->dev.hidraw < 0) {
         printf("HID:     Trying to apply controller state on incompatible device (%lu)\n", c->dev.id);
         return;

@@ -1,0 +1,19 @@
+items		-> item* ;
+item		-> align | type_decl | struct | messages | constant;
+
+type_decl	-> "type" IDENT "=" type ";"
+align		-> "align" "(" number ")" ";"
+struct		-> "struct" IDENT "{" field ("," field)* ","? "}" ;
+messages	-> "messages" IDENT "{" message* "}" ;
+constant	-> "const" IDENT "=" number ";" ;
+
+field		-> IDENT ":" type ;
+number		-> NUMBER | IDENT ;
+message		-> IDENT "{" field ("," field)* ","? "}" ;
+
+type		-> IDENT | heap_array | field_array ;
+heap_array	-> type "&" "[" "]" | type "[" "]" 
+		 | type "&" "[" max_size | fixed_size "]" ;
+field_array	-> type "[" max_size | fixed_size "]" ;
+max_size	-> "^" number ;
+fixed_size	-> number ;

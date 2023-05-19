@@ -118,6 +118,33 @@ static void print_config() {
     printf("\n");
 }
 
+void print_message_buffer(const uint8_t *buf, int len) {
+    bool last_beg = false;
+    for (int i = 0; i < len; i++) {
+        if (i + MSG_MAGIC_SIZE <= len) {
+            MsgMagic magic = *(MsgMagic *)(&buf[i]);
+            if (magic == MSG_MAGIC_START) {
+                printf(" \033[32m%08lX\033[0m", magic);
+                i += MSG_MAGIC_SIZE - 1;
+                last_beg = true;
+                continue;
+            } else if (magic == MSG_MAGIC_END) {
+                printf(" \033[32m%08lX\033[0m", magic);
+                i += MSG_MAGIC_SIZE - 1;
+                continue;
+            }
+        }
+
+        if (last_beg) {
+            last_beg = false;
+            printf(" \033[034m%04X\033[0m", *(uint16_t*)&buf[i]);
+            i++;
+        } else {
+            printf(" %02X", buf[i]);
+        }
+    }
+}
+
 void device_thread_exit(int _sig) {
     struct DeviceThreadArgs *args = pthread_getspecific(device_args_key);
     printf("CONN(%d): [%d] exiting\n", args->conn->id, args->index);
@@ -145,8 +172,8 @@ void *device_thread(void *args_) {
     TRAP_IGN(SIGPIPE);
     TRAP(SIGTERM, device_thread_exit);
 
-    uint8_t           buf[2048] __attribute__((aligned(4))) = {0};
-    MessageDeviceInfo dev_info;
+    uint8_t    buf[2048] __attribute__((aligned(4))) = {0};
+    DeviceInfo dev_info;
 
     while (true) {
         if (*args->controller != NULL) {
@@ -169,21 +196,21 @@ void *device_thread(void *args_) {
 
         // Send over device info
         {
-            int len = msg_serialize(buf, 2048, (Message *)&dev_info);
+            int len = msg_device_serialize(buf, 2048, (DeviceMessage *)&dev_info);
             if (write(args->conn->socket, buf, len) == -1) {
                 printf("CONN(%d): [%d] Couldn't send device info\n", args->conn->id, args->index);
                 break;
             }
         }
 
-        MessageDeviceReport report = {0};
+        DeviceReport report = {0};
 
-        report.code      = DeviceReport;
-        report.abs_count = ctr->dev.device_info.abs_count;
-        report.rel_count = ctr->dev.device_info.rel_count;
-        report.key_count = ctr->dev.device_info.key_count;
-        report.slot      = args->index;
-        report.index     = controller_index;
+        report.tag     = DeviceTagReport;
+        report.abs.len = ctr->dev.device_info.abs.len;
+        report.rel.len = ctr->dev.device_info.rel.len;
+        report.key.len = ctr->dev.device_info.key.len;
+        report.slot    = args->index;
+        report.index   = controller_index;
 
         while (true) {
             struct input_event event;
@@ -203,13 +230,12 @@ void *device_thread(void *args_) {
             }
 
             if (event.type == EV_SYN) {
-                int len = msg_serialize(buf, 2048, (Message *)&report);
+                int len = msg_device_serialize(buf, 2048, (DeviceMessage *)&report);
 
                 if (len < 0) {
                     printf("CONN(%d): [%d] Couldn't serialize report %d\n", args->conn->id, args->index, len);
                     continue;
                 };
-
                 send(args->conn->socket, buf, len, 0);
             } else if (event.type == EV_ABS) {
                 int index = ctr->dev.mapping.abs_indices[event.code];
@@ -219,7 +245,7 @@ void *device_thread(void *args_) {
                     continue;
                 };
 
-                report.abs[index] = event.value;
+                report.abs.data[index] = event.value;
             } else if (event.type == EV_REL) {
                 int index = ctr->dev.mapping.rel_indices[event.code];
 
@@ -228,7 +254,7 @@ void *device_thread(void *args_) {
                     continue;
                 };
 
-                report.rel[index] = event.value;
+                report.rel.data[index] = event.value;
             } else if (event.type == EV_KEY) {
                 int index = ctr->dev.mapping.key_indices[event.code];
 
@@ -236,17 +262,17 @@ void *device_thread(void *args_) {
                     printf("CONN(%d): [%d] Invalid key\n", args->conn->id, args->index);
                     continue;
                 };
-                report.key[index] = !!event.value;
+                report.key.data[index] = !!event.value;
             }
         }
 
         // Send device destroy message
         {
-            MessageDestroy dstr;
-            dstr.code  = DeviceDestroy;
+            DeviceDestroy dstr;
+            dstr.tag  = DeviceTagDestroy;
             dstr.index = args->index;
 
-            int len = msg_serialize(buf, 2048, (Message *)&dstr);
+            int len = msg_device_serialize(buf, 2048, (DeviceMessage *)&dstr);
             if (write(args->conn->socket, buf, len) == -1) {
                 printf("CONN(%d): [%d] Couldn't send device destroy message\n", args->conn->id, args->index);
                 break;
@@ -310,7 +336,7 @@ void *server_handle_conn(void *args_) {
         if (len <= 0) {
             closing_message = "Lost peer (from recv)";
             goto conn_end;
-        } else if (len > 1 + MAGIC_SIZE * 2) {
+        } else if (len > 1) {
             printf("CONN(%d):  Got message: ", args->id);
             printf("\n");
         } else {
@@ -318,10 +344,10 @@ void *server_handle_conn(void *args_) {
         }
 
         // Parse message
-        Message msg;
-        int     msg_len = msg_deserialize(buf, len, &msg);
+        DeviceMessage msg;
+        int     msg_len = msg_device_deserialize(buf, len, &msg);
         if (msg_len < 0) {
-            if (len > 1 + MAGIC_SIZE * 2) {
+            if (len > 1) {
                 printf("CONN(%d): Couldn't parse message: ", args->id);
                 print_message_buffer(buf, len);
                 printf("\n");
@@ -332,7 +358,7 @@ void *server_handle_conn(void *args_) {
         }
 
         // Handle message
-        if (msg.code == ControllerState) {
+        if (msg.tag == DeviceTagControllerState) {
             int i = msg.controller_state.index;
             if (i >= device_controllers.len) {
                 printf("CONN(%d): Invalid controller index in controller state message\n", args->id);
@@ -346,10 +372,10 @@ void *server_handle_conn(void *args_) {
             }
 
             apply_controller_state(ctr, &msg.controller_state);
-        } else if (msg.code == Request) {
+        } else if (msg.tag == DeviceTagRequest) {
             if (got_request) {
                 printf("CONN(%d): Illegal Request message after initial request\n", args->id);
-                msg_free(&msg);
+                msg_device_free(&msg);
                 continue;
             }
 
@@ -357,7 +383,7 @@ void *server_handle_conn(void *args_) {
 
             printf("CONN(%d): Got client request\n", args->id);
 
-            for (int i = 0; i < msg.request.request_count; i++) {
+            for (int i = 0; i < msg.request.requests.len; i++) {
                 int         index = device_controllers.len;
                 Controller *ctr   = NULL;
                 vec_push(&device_controllers, &ctr);
@@ -365,13 +391,14 @@ void *server_handle_conn(void *args_) {
                 struct DeviceThreadArgs *dev_args = malloc(sizeof(struct DeviceThreadArgs));
 
                 dev_args->controller = vec_get(&device_controllers, index);
-                dev_args->tag_count  = msg.request.requests[i].count;
+                dev_args->tag_count  = msg.request.requests.data[i].tags.len;
                 dev_args->tags       = malloc(dev_args->tag_count * sizeof(char *));
                 dev_args->conn       = args;
                 dev_args->index      = index;
 
                 for (int j = 0; j < dev_args->tag_count; j++) {
-                    dev_args->tags[j] = strdup(msg.request.requests[i].tags[j]);
+                    Tag t = msg.request.requests.data[i].tags.data[j];
+                    dev_args->tags[j] = strndup(t.name.data, t.name.len);
                 }
 
                 pthread_t thread;
@@ -379,7 +406,7 @@ void *server_handle_conn(void *args_) {
                 vec_push(&device_threads, &thread);
             }
 
-            msg_free(&msg);
+            msg_device_free(&msg);
         } else {
             printf("CONN(%d): Illegal message\n", args->id);
         }

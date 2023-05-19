@@ -2,7 +2,7 @@ Q=@
 CC=gcc
 
 GCCCFLAGS=-Wno-format-truncation 
-CFLAGS=-std=c11 -pedantic -g -Wall -pthread -D_GNU_SOURCE
+CFLAGS=-std=gnu11 -pedantic -g -Wall -pthread -D_GNU_SOURCE -fsanitize=address
 LDFLAGS=-lm
 
 # The root for /sys and /dev needs to be moved in docker, this should stay empty in most cases

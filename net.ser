@@ -1,0 +1,63 @@
+struct Abs {
+    id: u16,
+    min: u32,
+    max: u32,
+    fuzz: u32,
+    flat: u32,
+    res: u32,
+}
+
+struct Rel {
+    id: u16,
+}
+
+struct Key {
+    id: u16,
+}
+
+const ABS_CNT = 64;
+const REL_CNT = 16;
+const KEY_CNT = 768;
+
+struct Tag {
+    name: char[],
+}
+
+struct TagList {
+    tags: Tag[],
+}
+
+version(1);
+messages Device {
+    Info {
+        slot: u8,
+        index: u8,
+
+        abs: Abs[^ABS_CNT],
+        rel: Rel[^REL_CNT],
+        key: Key[^KEY_CNT],
+    }
+    Report {
+        slot: u8,
+        index: u8,
+
+        abs: u32[^ABS_CNT],
+        rel: u32[^REL_CNT],
+        key: u8[^KEY_CNT],
+    }
+    ControllerState {
+        index: u16,
+        led: u8[3],
+        small_rumble: u8,
+        big_rumble: u8,
+        flash_on: u8,
+        flash_off: u8,
+    }
+    #[versioned]
+    Request {
+        requests: TagList[],
+    }
+    Destroy {
+        index: u16,
+    }
+}
