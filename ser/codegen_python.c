@@ -403,7 +403,6 @@ static void define_message(Writer *w, const char *prefix, uint16_t tag, Hashmap 
     wt_format(w, "class %s(%sMessage):\n", name, prefix);
 
     TypeObject *type;
-    StructObject *obj;
     FieldVec fields = vec_clone(&msg.fields);
     {
         if (msg.attributes & Attr_versioned) {
@@ -418,7 +417,6 @@ static void define_message(Writer *w, const char *prefix, uint16_t tag, Hashmap 
         type->type.struct_.has_funcs = false;
         type->type.struct_.fields = *(AnyVec *)&fields;
         type->align = ALIGN_8;
-        obj = (StructObject *)&type->type.struct_;
 
         Layout l = type_layout(type);
         hashmap_set(layouts, &l);

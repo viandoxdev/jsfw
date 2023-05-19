@@ -1117,6 +1117,7 @@ static void resolve_constants(EvaluationContext *ctx) {
 static void resolve_messages(EvaluationContext *ctx) {
     AstItemVec *items = ctx->items;
     Hashmap *names = hashmap_init(sss_hash, sss_equal, NULL, sizeof(SpannedStringSlice));
+    Hashmap *message_names = hashmap_init(sss_hash, sss_equal, NULL, sizeof(SpannedStringSlice));
     Hashmap *field_names = hashmap_init(sss_hash, sss_equal, NULL, sizeof(SpannedStringSlice));
 
     ctx->messages = (MessagesObjectVec)vec_init();
@@ -1166,11 +1167,11 @@ static void resolve_messages(EvaluationContext *ctx) {
 
                 SpannedStringSlice name = sss_from_token(msg.ident);
 
-                SpannedStringSlice *prev_name = hashmap_get(names, &name);
+                SpannedStringSlice *prev_name = hashmap_get(message_names, &name);
                 if (prev_name != NULL) {
                     vec_push(&ctx->errors, err_duplicate_def(prev_name->span, name.span, ATIdent, name.slice));
                 } else {
-                    hashmap_set(names, &name);
+                    hashmap_set(message_names, &name);
                 }
 
                 MessageObject message;
@@ -1203,11 +1204,13 @@ static void resolve_messages(EvaluationContext *ctx) {
             }
         }
 
+        hashmap_clear(message_names);
         vec_push(&ctx->messages, res);
         version = ~0;
     }
 
     hashmap_drop(names);
+    hashmap_drop(message_names);
     hashmap_drop(field_names);
 }
 
